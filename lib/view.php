@@ -18,9 +18,24 @@ class View
 
 class Request
 {
+    public function redirect() {
+    }
+
+    public function error() {
+    }
 }
 
 
 class User
 {
+}
+
+
+class Form
+{
+    public function begin() {
+    }
+
+    public function end() {
+    }
 }
