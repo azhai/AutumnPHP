@@ -16,8 +16,7 @@
   </div>
 <hr>
 <p id="nav">
-  <a href="<?php echo url_for('posts') ?>">List all posts</a> |
-  <a href="<?php echo url_for('posts','new') ?>">Create a new post</a>
+  <?php $this->block('nav', array('menus', 'current')) ?>
 </p>
 </body>
 </html>

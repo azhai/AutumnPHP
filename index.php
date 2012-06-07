@@ -1,20 +1,19 @@
 <?php
 require_once('lib/base.php');
-require_once('lib/template.php');
-
-function url_for() {
-    return '/' . implode('/', func_get_args() );
-}
+$app = new Application('config.php');
+an('app', 0, $app)->run();
 
 
-class Post
-{
-    public $id = 0;
-    public $title = '';
-}
+$menus = array(
+  url_for() => 'Home',
+  url_for('posts') => 'List all posts',
+  url_for('posts','new') => 'Create a new post',
+);
+
 
 $t = new Template('posts/index.php');
 $t->render(array(
+	'menus' => $menus, 'current' => an('req')->url,
     'posts' => array(new Post(), new Post()),
 ));
 

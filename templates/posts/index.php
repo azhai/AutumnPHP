@@ -1,5 +1,5 @@
 <?php
-$this->layout('layouts/default.php');
+$this->extend('layouts/navig.php');
 
 function content($posts){
 ?>
