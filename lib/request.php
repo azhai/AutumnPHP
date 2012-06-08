@@ -1,4 +1,5 @@
 <?php
+defined('APPLICATION_ROOT') or die();
 
 function url_for() {
     return '/' . implode('/', func_get_args() );
@@ -8,7 +9,10 @@ function url_for() {
 class Request
 {
 	public $app = null;
-	public $url = '';
+	public $url = '/';
+	public $file = '/index.php';
+	public $view = '';
+	public $action = 'index';
 	public $method = 'GET';
 
 	public function __construct($app) {
@@ -43,14 +47,4 @@ class Request
 
 class User
 {
-}
-
-
-class Form
-{
-    public function begin() {
-    }
-
-    public function end() {
-    }
 }

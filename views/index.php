@@ -1,0 +1,3 @@
+<?php
+$req->redirect('post');
+?>

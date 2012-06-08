@@ -1,4 +1,6 @@
 <?php
+defined('APPLICATION_ROOT') or die();
+
 /**
  * 模板类，带有布局Layout和板块Block
  */

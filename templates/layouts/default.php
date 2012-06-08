@@ -11,12 +11,13 @@
 </head>
 <body>
   <h1>Autumn PHP blog example</h1>
+  <h3>Current URL: <?php echo $req->url ?></h3>
   <div id="content">
     <?php $this->block('content', array('posts')) ?>
   </div>
 <hr>
 <p id="nav">
-  <?php $this->block('nav', array('menus', 'current')) ?>
+  <?php $this->block('nav', array('menus', 'req')) ?>
 </p>
 </body>
 </html>

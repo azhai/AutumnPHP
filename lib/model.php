@@ -1,4 +1,5 @@
 <?php
+defined('APPLICATION_ROOT') or die();
 
 class Model
 {
