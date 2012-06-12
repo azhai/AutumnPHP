@@ -8,6 +8,18 @@ function newAction($req) { #/post/new调用
 		url_for('post','edit') => 'Edit a new post',
 	);
 
+	/*
+	$db = an('db', 'default', 'load_plugin', array(
+		'f3/db.php',
+		array('DB', '__construct'),
+		$req->app->configs->databases['default'],
+		array('f3/base.php')
+	));
+	$rs = $db::sql('SELECT * FROM t_user LIMIT 1');
+	$post = new Post();
+	$post->accept($rs[0]);
+	var_dump($post);
+	*/
 
 	$t = new Template('posts/index.php');
 	$t->render(array(
@@ -19,7 +31,7 @@ function newAction($req) { #/post/new调用
 class PostView
 {
 	public function indexAction($req) { #/post调用
-		newAction($req);
+		return newAction($req);
 	}
 }
 

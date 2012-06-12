@@ -1,6 +1,9 @@
 <?php
+defined('DS') or define('DS', DIRECTORY_SEPARATOR);
 defined('APPLICATION_ROOT') or define('APPLICATION_ROOT', dirname(dirname(__FILE__)));
-define('DS', DIRECTORY_SEPARATOR);
+defined('VIEW_DIR') or define('VIEW_DIR', APPLICATION_ROOT . DS . 'views');
+defined('TEMPLATE_DIR') or define('TEMPLATE_DIR', APPLICATION_ROOT . DS . 'templates');
+defined('PLUGIN_DIR') or define('PLUGIN_DIR', APPLICATION_ROOT . DS . 'plugins');
 
 
 function call_my_func_array($creator, $params=array()) {
@@ -50,75 +53,69 @@ function camelize($underscored_word) {
 }
 
 
+function invoke_view($view_obj, $req) {
+	if (method_exists($view_obj, $req->action . 'Action')) {
+		$filter_objects = array();
+		$filters = null;
+		if (method_exists($view_obj, 'filters')) {
+			$filters = $view_obj->filters($req->action);
+		}
+		$filters = empty($filters) ? array() : $filters;
+
+		foreach($filters as $filter) {
+			$filter_obj = call_my_func_array(
+				array($filter . 'Filter', '__construct'), $view_obj
+			);
+			if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
+				return;
+			}
+			array_push($filter_objects, $filter_obj);
+		}
+		$result = call_user_func(array($view_obj, $req->action . 'Action'), & $req);
+		while ($filter_obj = array_pop($filter_objects)) {
+			if (method_exists($filter_obj, 'after')) {
+				$result = $filter_obj->after(& $result);
+			}
+		}
+		return $result;
+	}
+}
+
+
+function load_plugin($file, $creator=null, $params=array(), $imports=array()) {
+	foreach ($imports as $import_file) {
+		require_once PLUGIN_DIR . DS . $import_file;
+	}
+	$plugin_file = PLUGIN_DIR . DS . $file;
+	if ($file && file_exists($plugin_file) && is_file($plugin_file)) {
+		require_once $plugin_file;
+	}
+	$creator = empty($creator) ? ucfirst(basename($file, '.php')) : $creator;
+	return is_string($creator) ? $creator : call_my_func_array($creator, $params);
+}
+
+
 class Application
 {
-    private static $plugins = array();
     public static $view_dir = '';
     public $configs = array();
     public $routers = array();
+    public $site_title = '';
+    public $max_router_layer = 2; //view文件与目录最多两层
 
     public function __construct($config_filename) {
-        if (empty(self::$view_dir)) {
-            self::$view_dir = APPLICATION_ROOT . DS . 'views';
-        }
-        $this->configs = (include $config_filename);
-        if (! isset($this->configs['MAX_VIEW_LAYER'])) {
-            $this->configs['MAX_VIEW_LAYER'] = 2; //view文件与目录最多两层
-        }
-    }
-
-    public function load($name) {
-    }
-
-    public function parse($req) {
-        /* #TODO: 先检查$this->routers中缓存的正则URL对应的结果
-         if ($req->url MATCH A KEY IN $this->routers) {
-            foreach ($this->routers[KEY] as $prop => $value) {
-                $req->$prop = $value;
-            }
-            return true;
-         }*/
-
-        $limit = $this->configs['MAX_VIEW_LAYER'] + 1;
-        $pics = preg_split('/\//', $req->url, $limit + 1,
-                           PREG_SPLIT_NO_EMPTY | PREG_SPLIT_OFFSET_CAPTURE);
-        if (count($pics) > $limit) {
-            array_pop($pics);
-        }
-
-        $limit = count($pics) - 1;
-        while ($limit >= 0) {
-            $pos = $pics[$limit][1] + strlen($pics[$limit][0]);
-            $dir = substr($req->url, 0, $pos);
-            if (file_exists(self::$view_dir . $dir . DS)) { //目录存在
-                if (file_exists(self::$view_dir . $dir . $req->file)) {
-                    $req->file = $dir . $req->file;
-                    $req->args = explode('/', substr($req->url, $pos + 1));
-                    if (! empty($req->args) && $req->args != array('')) {
-                        $req->action = array_shift($req->args);
-                    }
-                    return true;
-                }
-            }
-            else if (file_exists(self::$view_dir . $dir . '.php')) { //文件存在
-                $req->file = $dir . '.php';
-                $req->args = explode('/', substr($req->url, $pos + 1));
-                if (! empty($req->args) && $req->args != array('')) {
-                    $req->action = array_shift($req->args);
-                }
-                return true;
-            }
-            $limit --;
-        }
-        if (file_exists(self::$view_dir . $req->file)) {
-            return true; //默认文件/index.php存在
-        }
+        $this->configs = new ReadOnly(include $config_filename);
+		$basic_configs = empty($this->configs->basic) ? array() : $this->configs->basic;
+		foreach ($basic_configs as $key=>$value) {
+			if ($key != 'configs') {
+				$this->$key = $value;
+			}
+		}
     }
 
     public function run() {
         $req = an('req', 0, new Request($this));
-        $this->parse($req);
-        require_once self::$view_dir . $req->file;
+        require_once VIEW_DIR . $req->file;
 
         if (function_exists($req->action . 'Action')) {
             $req->view = '';
@@ -131,18 +128,13 @@ class Application
             $view_obj = call_my_func_array(
                 array($req->view . 'View', '__construct')
             );
-            if (method_exists($view_obj, $req->action . 'Action')) {
-                return call_user_func(array($view_obj, $req->action . 'Action'), $req);
-            }
-
+			invoke_view($view_obj, $req);
         }
     }
 
     public static function autoload($klass)
     {
-        if (isset(self::$plugins[$klass])) {
-            //The object is exists!
-        } else if (isset(self::$builtins[$klass])) {
+        if (isset(self::$builtins[$klass])) {
             include(APPLICATION_ROOT . DS . self::$builtins[$klass]);
         } else { //自动加载models下的类
             $filenames = glob(APPLICATION_ROOT . DS . 'models' . DS . '*.php');
@@ -160,8 +152,10 @@ class Application
     }
 
     private static $builtins = array(
+        'ReadOnly' => 'lib/model.php',
         'Model' => 'lib/model.php',
         'Request' => 'lib/request.php',
+        'Curl' => 'lib/request.php',
         'Template' => 'lib/template.php',
         'User' => 'lib/request.php',
     );

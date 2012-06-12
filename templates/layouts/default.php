@@ -4,13 +4,13 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-    <title>Autumn PHP blog example</title>
+    <title><?php echo $req->app->site_title ?></title>
     <meta name="generator" content="TextMate http://macromates.com/">
     <meta name="author" content="Fabrice Luraine">
     <!-- Date: 2009-06-25 -->
 </head>
 <body>
-  <h1>Autumn PHP blog example</h1>
+  <h1><?php echo $req->app->site_title ?></h1>
   <h3>Current URL: <?php echo $req->url ?></h3>
   <div id="content">
     <?php $this->block('content', array('posts')) ?>
