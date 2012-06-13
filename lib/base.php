@@ -1,6 +1,7 @@
 <?php
 defined('DS') or define('DS', DIRECTORY_SEPARATOR);
 defined('APPLICATION_ROOT') or define('APPLICATION_ROOT', dirname(dirname(__FILE__)));
+defined('MODEL_DIR') or define('MODEL_DIR', APPLICATION_ROOT . DS . 'models');
 defined('VIEW_DIR') or define('VIEW_DIR', APPLICATION_ROOT . DS . 'views');
 defined('TEMPLATE_DIR') or define('TEMPLATE_DIR', APPLICATION_ROOT . DS . 'templates');
 defined('PLUGIN_DIR') or define('PLUGIN_DIR', APPLICATION_ROOT . DS . 'plugins');
@@ -64,7 +65,7 @@ function invoke_view($view_obj, $req) {
 
 		foreach($filters as $filter) {
 			$filter_obj = call_my_func_array(
-				array($filter . 'Filter', '__construct'), $view_obj
+				array($filter . 'Filter', '__construct'), array(& $view_obj)
 			);
 			if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
 				return;
@@ -135,14 +136,14 @@ class Application
     public static function autoload($klass)
     {
         if (isset(self::$builtins[$klass])) {
-            include(APPLICATION_ROOT . DS . self::$builtins[$klass]);
+            require_once(APPLICATION_ROOT . DS . self::$builtins[$klass]);
         } else { //自动加载models下的类
-            $filenames = glob(APPLICATION_ROOT . DS . 'models' . DS . '*.php');
+            $filenames = glob(MODEL_DIR . DS . '*.php');
             if (empty($filenames)) {
                 return false;
             }
             foreach ($filenames as $filename) {
-                require_once $filename;
+                require_once($filename);
                 if (class_exists($klass, false)) {
                     return true;
                 }

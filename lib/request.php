@@ -87,6 +87,9 @@ class Request
     }
 
     public function error($code=404) {
+		$t = new Template( sprintf('errors/%d.php', $code) );
+		$t->render();
+		exit;
     }
 }
 
@@ -168,9 +171,4 @@ class Curl
 			array($this, $method), $url, $data
 		);
 	}
-}
-
-
-class User
-{
 }

@@ -1,6 +1,4 @@
 <?php
-defined('APPLICATION_ROOT') or die();
-
 
 class ReadOnly
 {
@@ -27,10 +25,11 @@ class ReadOnly
 class Model extends ReadOnly
 {
 	public static $_schema_ = 'default';  #数据库连接
+	protected $_table_ = ''; 			#数据表名
 	public static $pkeys = array('id');  #主键名
 	public static $relations = array();  #关系
-	protected $_data_ = array();  #数据表
-	protected $_relation_ = array();  #数据表
+	protected $_data_ = array();  		#数据
+	protected $_relation_ = array();  	#关系
 
     public function __construct(array $row=null) {
         parent::__construct($row);

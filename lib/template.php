@@ -1,6 +1,12 @@
 <?php
 defined('APPLICATION_ROOT') or die();
 
+
+function _e($word) { //I18N翻译函数
+	echo $word;
+}
+
+
 /**
  * 模板类，带有布局Layout和板块Block
  */
@@ -35,7 +41,7 @@ class Template
 		}
     }
 
-    public function render(array $context=null, $encoding='utf-8') {
+    public function render(array $context=null, $encoding='UTF-8') {
 		if(! headers_sent()) {
 			header('Content-Type: text/html; charset='.$encoding);
 			if (! empty($context)) {
@@ -53,7 +59,7 @@ class Template
 		}
     }
 
-	public static function json(array $context=null, $encoding='utf-8') {
+	public static function json(array $context=null, $encoding='UTF-8') {
 		if(! headers_sent()) {
 			header('Content-Type: application/json; charset='.$encoding);
 		}
