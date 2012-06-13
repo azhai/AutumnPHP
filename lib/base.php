@@ -55,31 +55,33 @@ function camelize($underscored_word) {
 
 
 function invoke_view($view_obj, $req) {
-	if (method_exists($view_obj, $req->action . 'Action')) {
-		$filter_objects = array();
-		$filters = null;
-		if (method_exists($view_obj, 'filters')) {
-			$filters = $view_obj->filters($req->action);
-		}
-		$filters = empty($filters) ? array() : $filters;
-
-		foreach($filters as $filter) {
-			$filter_obj = call_my_func_array(
-				array($filter . 'Filter', '__construct'), array(& $view_obj)
-			);
-			if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
-				return;
-			}
-			array_push($filter_objects, $filter_obj);
-		}
-		$result = call_user_func(array($view_obj, $req->action . 'Action'), & $req);
-		while ($filter_obj = array_pop($filter_objects)) {
-			if (method_exists($filter_obj, 'after')) {
-				$result = $filter_obj->after(& $result);
-			}
-		}
-		return $result;
+	if (! method_exists($view_obj, $req->action . 'Action')) {
+		array_unshift($req->args, $req->action);
+		$req->action = 'index';
 	}
+	$filter_objects = array();
+	$filters = null;
+	if (method_exists($view_obj, 'filters')) {
+		$filters = $view_obj->filters($req->action);
+	}
+	$filters = empty($filters) ? array() : $filters;
+
+	foreach($filters as $filter) {
+		$filter_obj = call_my_func_array(
+			array($filter . 'Filter', '__construct'), array(& $view_obj)
+		);
+		if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
+			return;
+		}
+		array_push($filter_objects, $filter_obj);
+	}
+	$result = call_user_func(array($view_obj, $req->action . 'Action'), & $req);
+	while ($filter_obj = array_pop($filter_objects)) {
+		if (method_exists($filter_obj, 'after')) {
+			$filter_obj->after(& $result);
+		}
+	}
+	return $result;
 }
 
 

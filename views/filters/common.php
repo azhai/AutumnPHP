@@ -27,3 +27,25 @@ class optionFilter
 		$t->render($result);
 	}
 }
+
+
+class siderFilter
+{
+	protected $view = null;
+
+	public function __construct($view) {
+		$this->view = $view;
+	}
+
+	public function after($result) {
+		$db = an('db', 'default');
+		$pages = $db::sql("SELECT * FROM t_contents WHERE type='page'");
+		$create_obj = function($row) {
+			$obj = new Content();
+			$obj->accept($row);
+			return $obj;
+		};
+		$result['user'] = $this->view->user;
+		$result['pages'] = array_map($create_obj, $pages);
+	}
+}

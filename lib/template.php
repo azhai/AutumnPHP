@@ -3,7 +3,12 @@ defined('APPLICATION_ROOT') or die();
 
 
 function _e($word) { //I18N翻译函数
-	echo $word;
+	return $word;
+}
+
+function contain($filename) { //模板包含
+	$filename = TEMPLATE_DIR . DS . $filename;
+	include($filename);
 }
 
 
@@ -29,12 +34,19 @@ class Template
 
     public function block($block_name, array $arg_keys=null) { //生成板块
         $block_args = array();
-        if (! empty($arg_keys)) {
-            foreach ($arg_keys as $key) {
-                $block_args[] = array_key_exists($key, $this->context) ? $this->context[$key] : null;
-            }
-        }
 		if (function_exists($block_name)) {
+			if (empty($arg_keys)) {
+				$func = new ReflectionFunction($block_name);
+				$params = $func->getParameters();
+				foreach ($params as $param) {
+					$block_args[] = array_key_exists($param->name, $this->context) ? $this->context[$param->name] : null;
+				}
+			}
+			else {
+				foreach ($arg_keys as $key) {
+					$block_args[] = array_key_exists($key, $this->context) ? $this->context[$key] : null;
+				}
+			}
 			ob_start();
 			call_user_func_array($block_name, $block_args);
 			return ob_end_flush(); //输出BLOCK内容

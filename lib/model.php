@@ -69,6 +69,17 @@ class Model extends ReadOnly
 		return $this->_changes_[$prop] = $value;
 	}
 
+	public function get_db() {
+		$schema = func_num_args() > 0 ? func_get_arg(0) : self::$_schema_;
+		$app = an('app');
+		return an('db', $schema, 'load_plugin', array(
+			'f3/db.php',
+			array('DB', '__construct'),
+			$app->configs->databases[$schema],
+			array('f3/base.php')
+		));
+	}
+
 	public function is_dirty() {
 		return ! empty($this->_changes_);
 	}
