@@ -15,6 +15,7 @@ class PostView
 		$obj = new Content();
 		$obj->accept($rows[0]);
 		return array(
+			'requrl' => $req->url,
 			'template_name' => 'entry.php',
 			'entry' => $obj,
 			'comments' => $obj->comments,

@@ -16,8 +16,9 @@ class IndexView
 			return $obj;
 		};
 		return array(
+			'requrl' => $req->url,
 			'template_name' => 'index.php',
-			'posts' => array_map($create_obj, $posts),
+			'entries' => array_map($create_obj, $posts),
 			'paginate' => '',
 		);
 	}

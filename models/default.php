@@ -87,19 +87,19 @@ class Content extends Model
 		$categories = $this->categories;
 		$cates = array();
 		foreach ($categories as $cate) {
-			$cates[] = $cate->name;
+			$cates[] = sprintf('<a href="/category/%s">%s</a>', $cate->slug, $cate->name);
 		}
 		return implode($sep, $cates);
 	}
 
 	public function h_num_comment($no='No Comments', $one='1 Comment', $many='%d Comments') {
 		$num = $this->commentsNum > 1 ? 2 : $this->commentsNum;
-		return _e(sprintf(func_get_arg($num), $num));
+		return _t(sprintf(func_get_arg($num), $num));
 	}
 
 	public function h_content($more='More', $max=100) {
 		if (strlen($this->text) > $max) {
-			$more_link = sprintf('<a href="%s">%s</a>', $this->url, _e($more));
+			$more_link = sprintf('<a href="%s">%s</a>', $this->url, _t($more));
 			return substr($this->text, 0, $max) . ' &nbsp;&nbsp; ' . $more_link;
 		}
 		else {
@@ -121,7 +121,7 @@ class Option extends Model
 			array(':name' => $prop)
 		);
 		if ($prop == 'siteUrl') {
-			return str_replace('99', '90', $rs[0]['value']);
+			return str_replace('81', '80', $rs[0]['value']);
 		}
 		return empty($rs) ? '' : $rs[0]['value'];
 	}

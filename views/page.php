@@ -15,9 +15,10 @@ class PageView
 		$obj = new Content();
 		$obj->accept($rows[0]);
 		return array(
+			'requrl' => $req->url,
 			'template_name' => 'entry.php',
 			'entry' => $obj,
-			'comments' => array(),
+			'comments' => $obj->comments,
 			'tags' => array(),
 		);
 	}
