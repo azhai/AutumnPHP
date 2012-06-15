@@ -15,6 +15,10 @@ class Template
     public $filename = '';
     public $tops = array();
     protected $context = array();
+    protected $headers = array(
+		'css_file' => array(),  'css_inline' => array(),
+		'js_file' => array(),  'js_inline' => array(),
+	);
 
     public function __construct($filename) {
         $this->filename = TEMPLATE_DIR . DS . $filename;
@@ -44,6 +48,43 @@ class Template
 			return ob_end_flush(); //输出HTML内容
 		}
     }
+
+	public function css($css, $type='file') {
+		$this->headers[ 'css_' . $type ][] = $css;
+	}
+
+	public function js($js, $type='inline') {
+		$this->headers[ 'js_' . $type ][] = $js;
+	}
+
+	public function block_headers() {
+		ob_start();
+		foreach ($this->headers['css_file'] as $css_file) {
+			printf('<link type="text/css" rel="stylesheet" href="%s" />', $css_file);
+			echo "\n";
+		}
+		foreach ($this->headers['js_file'] as $js_file) {
+			printf('<script type="text/javascript" src="%s"></script>', $js_file);
+			echo "\n";
+		}
+		if ( count($this->headers['css_inline']) > 0 ) {
+			echo '<style rel="stylesheet">';
+			foreach ($this->headers['css_inline'] as $css_inline) {
+				echo $css_inline;
+				echo "\n";
+			}
+			echo '</style>';
+		}
+		if ( count($this->headers['js_inline']) > 0 ) {
+			echo '<script type="text/javascript">';
+			foreach ($this->headers['js_inline'] as $js_inline) {
+				echo $js_inline;
+				echo "\n";
+			}
+			echo '</script>';
+		}
+		return ob_end_flush(); //输出HTML内容
+	}
 
 	public static function json(array $context=null, $encoding='UTF-8') {
 		if(! headers_sent()) {

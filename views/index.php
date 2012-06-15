@@ -8,17 +8,11 @@ class IndexView
 	}
 
 	public function indexAction($req) { #首页
-		$db = an('db', 'default');
-		$posts = $db::sql("SELECT * FROM t_contents WHERE type='post'");
-		$create_obj = function($row) {
-			$obj = new Content();
-			$obj->accept($row);
-			return $obj;
-		};
+		$entries = $req->app->factory('Content')->all("type='post'");
 		return array(
 			'requrl' => $req->url,
 			'template_name' => 'index.php',
-			'entries' => array_map($create_obj, $posts),
+			'entries' => $entries,
 			'paginate' => '',
 		);
 	}

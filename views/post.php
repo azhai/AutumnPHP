@@ -9,17 +9,16 @@ class PostView
 
 	public function indexAction($req) { #首页
 		$slug = $req->args[0];
-		$db = an('db', 'default');
-		$rows = $db::sql("SELECT * FROM t_contents WHERE type='post' AND slug=:slug",
-						 array(':slug'=>$slug));
-		$obj = new Content();
-		$obj->accept($rows[0]);
+		$objs = $req->app->factory('Content')->all(
+			"type='post' AND slug=:slug", array(':slug'=>$slug)
+		);
+		$entry = empty($objs) ? new Content() : $objs[0];
 		return array(
 			'requrl' => $req->url,
 			'template_name' => 'entry.php',
-			'entry' => $obj,
-			'comments' => $obj->comments,
-			'tags' => $obj->tags,
+			'entry' => $entry,
+			'comments' => $entry->comments,
+			'tags' => $entry->tags,
 		);
 	}
 }

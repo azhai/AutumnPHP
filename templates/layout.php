@@ -2,11 +2,11 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head profile="http://gmpg.org/xfn/11">
 <meta http-equiv="content-type" content="text/html; charset=<?php echo $options->charset ?>" />
-<title>
-	<?php echo $post ? ($post->title . ' - ') : ''; echo $options->title  ?>
-</title>
-<!-- 使用url函数转换相关路径 -->
-<link rel="stylesheet" type="text/css" media="all" href="/media/css/style.css" />
+<title><?php echo $entry ? ($entry->title . ' - ') : ''; echo $options->title  ?></title>
+<?php
+	$this->css('/media/css/style.css', 'file');
+	$this->block_headers();
+?>
 </head>
 
 <body>
@@ -15,7 +15,7 @@
 		<div><input type="text" name="s" class="text" size="20" /> <input type="submit" class="submit" value="<?php echo _t('搜索'); ?>" /></div>
     </form>
 	<div id="logo">
-	    <h1><a href="<?php echo $options->siteUrl ?>">
+	    <h1><a href="/">
         <?php if ($options->logoUrl): ?>
         <img height="60" src="<?php echo $options->logoUrl ?>" alt="<?php echo $options->title ?>" />
         <?php endif; ?>
@@ -28,7 +28,7 @@
 <div id="nav_box" class="clearfix">
 <ul class="container_16 clearfix" id="nav_menu">
     <li<?php if($requrl == '/'): ?> class="current"<?php endif; ?>>
-		<a href="<?php echo $options->siteUrl ?>"><?php echo _t('首页'); ?></a>
+		<a href="/"><?php echo _t('首页'); ?></a>
 	</li>
     <?php foreach ($pages as $page): ?>
     <li<?php if($requrl == $page->url ): ?> class="current"<?php endif; ?>>

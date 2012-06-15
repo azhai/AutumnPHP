@@ -10,14 +10,8 @@ class optionFilter
 	}
 
 	public function before($req) {
-		$db = an('db', 'default', 'load_plugin', array(
-			'f3/db.php',
-			array('DB', '__construct'),
-			$req->app->configs->databases['default'],
-			array('f3/base.php')
-		)); //连接数据库
-		$rs = $db::sql('SELECT * FROM t_users LIMIT 1');
-		$this->view->user = an('user', 0, new User($rs[0]));
+		$rs = $req->app->db()->query('SELECT * FROM t_users LIMIT 1');
+		$this->view->user = cached('user', 0, new User($rs[0]));
 		return true;
 	}
 
@@ -38,8 +32,7 @@ class siderFilter
 	}
 
 	public function after($result) {
-		$db = an('db', 'default');
-		$pages = $db::sql("SELECT * FROM t_contents WHERE type='page'");
+		$pages = cached('app')->db()->query("SELECT * FROM t_contents WHERE type='page'");
 		$create_obj = function($row) {
 			$obj = new Content();
 			$obj->accept($row);

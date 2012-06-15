@@ -2,39 +2,37 @@
 
 class User extends Model
 {
-	protected $_table_ = 't_users';
+	public static $table = 't_users';
     public static $pkeys = array('uid');
 }
 
 
 class Meta extends Model
 {
-	protected $_table_ = 't_metas';
-    public static $pkeys = array('uid');
+	public static $table = 't_metas';
+    public static $pkeys = array('mid');
 }
 
 
 class Comment extends Model
 {
-	protected $_table_ = 't_comments';
-    public static $pkeys = array('uid');
+	public static $table = 't_comments';
+    public static $pkeys = array('coid');
 }
 
 
 class Content extends Model
 {
-	protected $_table_ = 't_contents';
-    public static $pkeys = array('uid');
+	public static $table = 't_contents';
+    public static $pkeys = array('cid');
 
 	public function get_url() {
 		return sprintf('/%s/%s', $this->type, $this->slug);
 	}
 
 	public function get_author() {
-		$db = $this->get_db();
-		$rows = $db::sql("SELECT * FROM t_users WHERE uid=:uid",
-						 array(':uid'=>$this->authorId));
-		return empty($rows) ? '' : $rows[0]['screenName'];
+		$factory = cached('app')->factory('User');
+		return $factory->get($this->authorId)->screenName;
 	}
 
 	public function get_tags() {
@@ -42,45 +40,22 @@ class Content extends Model
 			return array();
 		}
 		else {
-			$objs = array();
-			$db = $this->get_db();
-			$rows = $db::sql("SELECT * FROM t_metas WHERE mid IN
-							 (SELECT mid FROM t_relationships WHERE type='tag' AND cid=:cid)",
-							 array(':cid'=>$this->cid));
-			foreach ($rows as $row) {
-				$obj = new Meta();
-				$obj->accept($row);
-				$objs[] = $obj;
-			}
-			return $objs;
+			$where = "mid IN (SELECT mid FROM t_relationships WHERE type='tag' AND cid=:cid)";
+			$factory = cached('app')->factory('Meta');
+			return $factory->all($where, array(':cid'=>$this->cid));
 		}
 	}
 
 	public function get_categories() {
-		$objs = array();
-		$db = $this->get_db();
-		$rows = $db::sql("SELECT * FROM t_metas WHERE mid IN
-						 (SELECT mid FROM t_relationships WHERE type='category' AND cid=:cid)",
-						 array(':cid'=>$this->cid));
-		foreach ($rows as $row) {
-			$obj = new Meta();
-			$obj->accept($row);
-			$objs[] = $obj;
-		}
-		return $objs;
+		$where = "mid IN (SELECT mid FROM t_relationships WHERE type='category' AND cid=:cid)";
+		$factory = cached('app')->factory('Meta');
+		return $factory->all($where, array(':cid'=>$this->cid));
 	}
 
 	public function get_comments() {
-		$objs = array();
-		$db = $this->get_db();
-		$rows = $db::sql("SELECT * FROM t_comments WHERE cid=:cid",
-						 array(':cid'=>$this->cid));
-		foreach ($rows as $row) {
-			$obj = new Comment();
-			$obj->accept($row);
-			$objs[] = $obj;
-		}
-		return $objs;
+		$where = "cid=:cid";
+		$factory = cached('app')->factory('Comment');
+		return $factory->all($where, array(':cid'=>$this->cid));
 	}
 
 	public function h_categories($sep=',') {
@@ -111,18 +86,15 @@ class Content extends Model
 
 class Option extends Model
 {
-	protected $_table_ = 't_options';
-    public static $pkeys = array('uid');
+	public static $table = 't_options';
+    public static $pkeys = array('name', 'user');
 
-	public function __get($prop) {
-		$db = an('db', 'default');
-		$rs = $db::sql(
-			"SELECT * FROM t_options WHERE user=0 AND name=:name",
-			array(':name' => $prop)
-		);
-		if ($prop == 'siteUrl') {
-			return str_replace('81', '80', $rs[0]['value']);
+	public function __construct($user=0) {
+        $sql = sprintf("SELECT * FROM `%s` WHERE user=?", self::$table);
+		$factory = cached('app')->factory( get_class($this) );
+		$rows = $factory->db->query($sql, array($user));
+		foreach ($rows as $row) {
+			$this->_data_[ $row['name'] ] = $row['value'];
 		}
-		return empty($rs) ? '' : $rs[0]['value'];
-	}
+    }
 }

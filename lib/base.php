@@ -6,6 +6,8 @@ defined('VIEW_DIR') or define('VIEW_DIR', APPLICATION_ROOT . DS . 'views');
 defined('TEMPLATE_DIR') or define('TEMPLATE_DIR', APPLICATION_ROOT . DS . 'templates');
 defined('PLUGIN_DIR') or define('PLUGIN_DIR', APPLICATION_ROOT . DS . 'plugins');
 
+error_reporting(E_ALL & ~E_NOTICE);
+
 
 function call_my_func_array($creator, $params=array()) {
     if (is_array($creator) && $creator[1] == '__construct') {
@@ -18,7 +20,12 @@ function call_my_func_array($creator, $params=array()) {
 }
 
 
-function an($class, $id=0) {
+function cached($class, $id=0) {
+	/*
+	#TODO:
+	backend_get() {}
+	backend_set() {}
+	*/
     static $objects = array(); //对象注册表
     $arglen = func_num_args();
     //$singlon = $id == 0; //是否单例
@@ -28,7 +35,7 @@ function an($class, $id=0) {
     }
     if ($arglen == 3) { //存放对象
         $instance = func_get_arg(2);
-        $objects[$class][$id] = $instance;
+        $objects[$class][$id] = & $instance;
         return $instance;
     }
 
@@ -38,7 +45,7 @@ function an($class, $id=0) {
         }
         else if ($arglen == 4) { //获取或创建对象
             $instance = call_my_func_array(func_get_arg(2), func_get_arg(3));
-            $objects[$class][$id] = $instance;
+            $objects[$class][$id] = & $instance;
             return $instance;
         }
     }
@@ -116,8 +123,28 @@ class Application
 		}
     }
 
+    public function db($schema='default') {
+        if ( array_key_exists($schema, $this->configs->databases) ) {
+            $config = $this->configs->databases[$schema];
+            return cached('db', $schema, array('Database', '__construct'), $config);
+        }
+    }
+
+    public function factory($model, $schema='') {
+		$factory = new DbFactory($model);
+		if ( empty($schema) ) {
+			$model = $factory->model;
+			$schema = $model::$schema;
+		}
+        if ( array_key_exists($schema, $this->configs->databases) ) {
+            $config = $this->configs->databases[$schema];
+            $factory->db = cached('db', $schema, array('Database', '__construct'), $config);
+        }
+		return $factory;
+    }
+
     public function run() {
-        $req = an('req', 0, new Request($this));
+        $req = cached('req', 0, new Request($this));
         require_once VIEW_DIR . $req->file;
 
         if (function_exists($req->action . 'Action')) {
@@ -155,10 +182,12 @@ class Application
     }
 
     private static $builtins = array(
-        'ReadOnly' => 'lib/model.php',
-        'Model' => 'lib/model.php',
-        'Request' => 'lib/request.php',
         'Curl' => 'lib/request.php',
+        'Database' => 'lib/model.php',
+        'DbFactory' => 'lib/model.php',
+        'Model' => 'lib/model.php',
+        'ReadOnly' => 'lib/model.php',
+        'Request' => 'lib/request.php',
         'Template' => 'lib/template.php',
         'User' => 'lib/request.php',
     );
