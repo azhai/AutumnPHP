@@ -1,7 +1,7 @@
 <?php
 $this->extend('layout.php');
 
-function block_list_content($entries, $paginate) {
+function block_list_content($this, $entries, $paginate) {
 ?>
 <div class="grid_10" id="content">
 	<?php foreach($entries as $entry): ?>
@@ -22,7 +22,7 @@ function block_list_content($entries, $paginate) {
 <?php
 }
 
-function block_paginate($paginate) { ?>
+function block_paginate($this, $paginate) { ?>
 	<ol class="page-navigator">
 		<li class="current">
 			<a href="/page/1/">1</a>

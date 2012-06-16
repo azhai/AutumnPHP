@@ -1,30 +1,30 @@
 <?php
 $this->extend('layout.php');
 
-function block_entry_content($user, $entry, $comments, $tags) {
+function block_entry_content($this, $user, $entry, $comments, $tags) {
 ?>
 <div class="grid_10" id="content">
 	<div class="post">
 		<h2 class="entry_title"><a href="<?php echo $entry->url ?>"><?php echo $entry->title ?></a></h2>
 		<p class="entry_data">
 			<span><?php echo _t('作者：'); echo $entry->author ?></span>
-			<?php echo _t('发布时间：'); echo date('Y-m-d', $entry->created);
-			if ($entry->type == 'post') { ?>
+			<span><?php echo _t('发布时间：'); echo date('Y-m-d', $entry->created) ?></span>
+			<?php if ($entry->type == 'post') { ?>
 			<span><?php echo _t('分类：'); echo $entry->h_categories(',') ?></span>
 			<a href="<?php echo $entry->url ?>#comments"><?php echo $entry->h_num_comment('No Comments', '1 Comment', '%d Comments'); ?></a>
 			<?php } ?>
 		</p>
 		<?php
 			echo $entry->text;
-			if ( function_exists('block_tags') ) { block_tags($tags); }
+			if ( function_exists('block_tags') ) { block_tags($this, $tags); }
 		?>
 	</div>
-	<?php if ( function_exists('block_comments') ) { block_comments($user, $entry, $comments); } ?>
+	<?php if ( function_exists('block_comments') ) { block_comments($this, $user, $entry, $comments); } ?>
 </div><!-- end #content-->
 <?php
 }
 
-function block_tags($tags) {
+function block_tags($this, $tags) {
 ?>
 <p class="tags">
 	<?php if (count($tags) > 0) {
@@ -37,7 +37,7 @@ function block_tags($tags) {
 <?php
 }
 
-function block_comments($user, $entry, $comments) {
+function block_comments($this, $user, $entry, $comments) {
 	include('comments.php');
 }
 ?>

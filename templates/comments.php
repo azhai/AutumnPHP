@@ -5,7 +5,7 @@
 	<?php foreach ($comments as $i => $comment) { ?>
 	<li id="comment-<?php echo $i ?>" class="comment-body comment-parent comment-odd">
 		<div class="comment-author">
-			<img class="avatar" src="http://0.gravatar.com/avatar/?s=32&amp;r=G&amp;d=" alt="Typecho" width="32" height="32">
+			<img class="avatar" src="/media/imgs/none.jpg" alt="Typecho" width="32" height="32">
 			<cite class="fn"><a href="<?php echo $comment->url ?>" rel="external nofollow"><?php echo $comment->author ?></a></cite>
 		</div>
 		<div class="comment-meta">

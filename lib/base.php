@@ -183,13 +183,12 @@ class Application
 
     private static $builtins = array(
         'Curl' => 'lib/request.php',
-        'Database' => 'lib/model.php',
-        'DbFactory' => 'lib/model.php',
+        'Database' => 'lib/database.php',
+        'DbFactory' => 'lib/database.php',
         'Model' => 'lib/model.php',
         'ReadOnly' => 'lib/model.php',
         'Request' => 'lib/request.php',
         'Template' => 'lib/template.php',
-        'User' => 'lib/request.php',
     );
 }
 

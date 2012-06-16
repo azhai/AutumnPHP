@@ -31,6 +31,16 @@ class Template
 		}
     }
 
+	public function widget() {
+		$args = func_get_args();
+		$widget_name = array_shift($args);
+		if ( function_exists($widget_name) ) {
+			ob_start();
+			call_user_func_array($widget_name, $args);
+			return ob_end_flush(); //输出HTML内容
+		}
+    }
+
     public function render(array $context=null, $encoding='UTF-8') {
 		if(! headers_sent()) {
 			header('Content-Type: text/html; charset='.$encoding);
@@ -50,14 +60,14 @@ class Template
     }
 
 	public function css($css, $type='file') {
-		$this->headers[ 'css_' . $type ][] = $css;
+		$this->headers[ 'css_' . $type ] []= $css;
 	}
 
 	public function js($js, $type='inline') {
-		$this->headers[ 'js_' . $type ][] = $js;
+		$this->headers[ 'js_' . $type ] []= $js;
 	}
 
-	public function block_headers() {
+	public function render_headers() {
 		ob_start();
 		foreach ($this->headers['css_file'] as $css_file) {
 			printf('<link type="text/css" rel="stylesheet" href="%s" />', $css_file);

@@ -5,7 +5,7 @@
 <title><?php echo $entry ? ($entry->title . ' - ') : ''; echo $options->title  ?></title>
 <?php
 	$this->css('/media/css/style.css', 'file');
-	$this->block_headers();
+	$this->render_headers();
 ?>
 </head>
 
@@ -41,9 +41,9 @@
 <div class="container_16 clearfix">
 
 	<?php
-		if ( function_exists('block_list_content') ) { block_list_content($entries, $paginate); }
-		if ( function_exists('block_entry_content') ) { block_entry_content($user, $entry, $comments, $tags); }
-		if ( function_exists('block_siderbar') ) { block_siderbar($user, $options); }
+		if ( function_exists('block_list_content') ) { block_list_content($this, $entries, $paginate); }
+		if ( function_exists('block_entry_content') ) { block_entry_content($this, $user, $entry, $comments, $tags); }
+		if ( function_exists('block_siderbar') ) { block_siderbar($this, $user, $options); }
 	?>
 
 	<div class="grid_14" id="footer">
@@ -57,7 +57,7 @@
 </html>
 
 <?php
-function block_siderbar($user, $options) {
+function block_siderbar($this, $user, $options) {
 ?>
     <div class="grid_4" id="sidebar">
 
