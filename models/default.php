@@ -11,6 +11,13 @@ class Meta extends Model
 {
 	public static $table = 't_metas';
     public static $pkeys = array('mid');
+
+    public function relations() {
+		return array(
+			'posts' => array('type'=>'many_many', 'model'=>'Content',
+							'middle'=>'t_relationships', 'lkey'=>'mid', 'rkey'=>'cid'),
+		);
+	}
 }
 
 
@@ -26,36 +33,23 @@ class Content extends Model
 	public static $table = 't_contents';
     public static $pkeys = array('cid');
 
+    public function relations() {
+		return array(
+			'author' => array('type'=>'belongs_to', 'model'=>'User',
+							'fkey'=>'authorId'),
+			'comments' => array('type'=>'has_many', 'model'=>'Comment',
+							'fkey'=>'cid', 'field'=>'cid'),
+			'categories' => array('type'=>'many_many', 'model'=>'Meta',
+							'middle'=>'t_relationships', 'lkey'=>'cid', 'rkey'=>'mid',
+							'extra'=>array("type='category'")),
+			'tags' => array('type'=>'many_many', 'model'=>'Meta',
+							'middle'=>'t_relationships', 'lkey'=>'cid', 'rkey'=>'mid',
+							'extra'=>array("type='tag'")),
+		);
+	}
+
 	public function get_url() {
 		return sprintf('/%s/%s', $this->type, $this->slug);
-	}
-
-	public function get_author() {
-		$factory = cached('app')->factory('User');
-		return $factory->get($this->authorId)->screenName;
-	}
-
-	public function get_tags() {
-		if ($this->type == 'page') {
-			return array();
-		}
-		else {
-			$where = "mid IN (SELECT mid FROM t_relationships WHERE type='tag' AND cid=:cid)";
-			$factory = cached('app')->factory('Meta');
-			return $factory->all($where, array(':cid'=>$this->cid));
-		}
-	}
-
-	public function get_categories() {
-		$where = "mid IN (SELECT mid FROM t_relationships WHERE type='category' AND cid=:cid)";
-		$factory = cached('app')->factory('Meta');
-		return $factory->all($where, array(':cid'=>$this->cid));
-	}
-
-	public function get_comments() {
-		$where = "cid=:cid";
-		$factory = cached('app')->factory('Comment');
-		return $factory->all($where, array(':cid'=>$this->cid));
 	}
 
 	public function h_categories($sep=',') {

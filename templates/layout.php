@@ -43,7 +43,7 @@
 	<?php
 		if ( function_exists('block_list_content') ) { block_list_content($this, $entries, $paginate); }
 		if ( function_exists('block_entry_content') ) { block_entry_content($this, $user, $entry, $comments, $tags); }
-		if ( function_exists('block_siderbar') ) { block_siderbar($this, $user, $options); }
+		if ( function_exists('block_siderbar') ) { block_siderbar($this, $user, $options, $siders); }
 	?>
 
 	<div class="grid_14" id="footer">
@@ -57,7 +57,7 @@
 </html>
 
 <?php
-function block_siderbar($this, $user, $options) {
+function block_siderbar($this, $user, $options, $siders) {
 ?>
     <div class="grid_4" id="sidebar">
 
@@ -65,7 +65,9 @@ function block_siderbar($this, $user, $options) {
 	    <div class="widget">
 			<h3><?php echo _t('最新文章'); ?></h3>
             <ul>
-				<li><a href=""></a></li>
+				<?php foreach ($siders['posts'] as $item):
+					printf('<li%s><a href="%s">%s</a></li>', '', $item->url, $item->title);
+				endforeach; ?>
             </ul>
 	    </div>
         <?php endif; ?>
@@ -74,7 +76,9 @@ function block_siderbar($this, $user, $options) {
 	    <div class="widget">
 			<h3><?php echo _t('最近回复'); ?></h3>
             <ul>
-				<li><a href=""></a></li>
+				<?php foreach ($siders['comments'] as $item):
+					printf('<li%s><a href="/comment/%d">%s</a></li>', '', $item->coid, $item->text);
+				endforeach; ?>
             </ul>
 	    </div>
         <?php endif; ?>
@@ -83,7 +87,9 @@ function block_siderbar($this, $user, $options) {
         <div class="widget">
 			<h3><?php echo _t('分类'); ?></h3>
             <ul>
-				<li><a href=""></a></li>
+				<?php foreach ($siders['categories'] as $item):
+					printf('<li%s><a href="/category/%s">%s</a></li>', '', $item->slug, $item->name);
+				endforeach; ?>
             </ul>
 		</div>
         <?php endif; ?>
@@ -92,7 +98,10 @@ function block_siderbar($this, $user, $options) {
         <div class="widget">
 			<h3><?php echo _t('归档'); ?></h3>
             <ul>
-				<li><a href=""></a></li>
+				<?php foreach ($siders['archives'] as $item):
+					printf('<li%s><a href="/archive/%s">%s(%d)</a></li>', '',
+						   $item['year_month'], $item['year_month'], $item['count']);
+				endforeach; ?>
             </ul>
 		</div>
         <?php endif; ?>

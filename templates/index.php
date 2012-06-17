@@ -8,7 +8,7 @@ function block_list_content($this, $entries, $paginate) {
 	<div class="post">
 		<h2 class="entry_title"><a href="<?php echo $entry->url ?>"><?php echo $entry->title ?></a></h2>
 		<p class="entry_data">
-			<span><?php echo _t('作者：'); echo $entry->author ?></span>
+			<span><?php echo _t('作者：'); echo $entry->author->screenName ?></span>
 			<span><?php echo _t('发布时间：'); echo date('Y-m-d', $entry->created) ?></span>
 			<span><?php echo _t('分类：'); echo $entry->h_categories(',') ?></span>
 			<a href="<?php echo $entry->url ?>#comments"><?php echo $entry->h_num_comment('No Comments', '1 Comment', '%d Comments'); ?></a>

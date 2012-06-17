@@ -47,7 +47,7 @@ class Database
 					$conn->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true);
 				}
 			} catch (PDOException $e) {
-				trigger_error("DB Connect failed:" . $e->getMessage(), E_USER_ERROR);
+				trigger_error("DB connect failed:" . $e->getMessage(), E_USER_ERROR);
 			}
 			$this->conn = $conn;
 		}
@@ -68,6 +68,7 @@ class Database
 			$conn->commit();
 		} catch(PDOException $e) {
             $conn->rollBack();
+			trigger_error("DB execute failed:" . $e->getMessage(), E_USER_ERROR);
         }
         if (! empty($affected)) {
             return $conn->$affected();  #lastInsertId / rowCount
@@ -79,7 +80,11 @@ class Database
         $conn = $this->connect();
 		$stmt = $conn->prepare($sql);
         $stmt->execute($args);
-        $result = $stmt->$fetch(); #fetchAll / fetch / fetchColumn
+		try {
+			$result = $stmt->$fetch(); #fetchAll / fetch / fetchColumn
+		} catch(PDOException $e) {
+			trigger_error("DB query failed:" . $e->getMessage(), E_USER_ERROR);
+        }
         $stmt->closeCursor();
         return $result;
     }
@@ -89,15 +94,24 @@ class Database
 class DbFactory
 {
 	public $model = null;
+	public $table = '';
 	public $db = null;
+	public $fields = '*';
+	public $conds = array();
+	public $or_conds = array();
 	public $params = array();
-	public $clause = array(
-		'conds' => array(),  'extra' => '',
-		'or' => array(), 'join' => array(),
-	);
+	public $extra = '';
 
 	public function __construct($model) {
 		$this->model = $model;
+	}
+
+	public static function init($table, $db) {
+		$class = __CLASS__;
+		$obj = new $class('Model');
+		$obj->table = $table;
+		$obj->db = $db;
+		return $obj;
 	}
 
 	public function wrap($row) {
@@ -112,48 +126,73 @@ class DbFactory
 		return $obj;
 	}
 
-	public function sql() {
+	public function sql($action="") {
 		$model = $this->model;
-		$table = $this->db->escape_table($model::$table);
-		$sql = sprintf("SELECT * FROM %s", $table);
+		if ( empty($this->table) ) {
+			$this->table = $this->db->escape_table($model::$table);
+		}
+		$conds = "";
+		if (! empty($this->conds) ) {
+			$conds = implode(" AND ", $this->conds);
+		}
+		if (! empty($this->or_conds) ) {
+			$conds = "(" . $conds . implode(") OR (", $this->or_conds) . ")";
+		}
+		$conds = empty($conds) ? "" : "WHERE " . $conds;
+		if ( empty($action) ) {
+			$action = "SELECT " . $this->fields . " FROM %s";
+		}
+		$sql = rtrim(sprintf($action . " %s %s", $this->table, $conds, $this->extra));
 		return $sql;
 	}
 
-	public function get($id) {
-		$model = $this->model;
-		$table = $this->db->escape_table($model::$table);
-		$expr = create_function('$x', 'return "$x=?";');
-		$where = implode(" AND ", array_map($expr, $model::$pkeys));
-		$sql = sprintf("SELECT * FROM %s WHERE %s", $table, $where);
-		$row = $this->db->query($sql, is_array($id) ? $id : array($id), 'fetch');
-		return $this->wrap($row);
+	public function get() { //传对应各主键的值
+		if(func_num_args() > 0) {
+			$model = $this->model;
+			$pkeys = $model::$pkeys;
+			$ids = func_get_args();
+			foreach ($ids as $i => $id) {
+				if (! is_null($id)) {
+					$this->_in($pkeys[$i], $id);
+				}
+			}
+		}
+		$row = $this->db->query($this->sql(), $this->params, 'fetch');
+		return $this->fields == "*" ? $this->wrap($row) : $row;
 	}
 
-	public function all($where, $args=array()) {
-		$model = $this->model;
-		$sql = sprintf("SELECT * FROM %s", $this->db->escape_table($model::$table));
-		if (! empty($where)) {
-			$sql .= " WHERE ";
-			$sql .= $where;
+	public function all($fields="*") {
+		if (! empty($fields) && $fields != "*") {
+			$this->fields = $fields;
 		}
-		$rows = $this->db->query($sql, is_array($args) ? $args : array($args), 'fetchAll');
-		$objs = array();
-		foreach ($rows as $row) {
-			$objs[] = $this->wrap($row);
+		$rows = $this->db->query($this->sql(), $this->params, 'fetchAll');
+		if ($this->fields == "*") {
+			$objs = array();
+			foreach ($rows as $row) {
+				$objs[] = $this->wrap($row);
+			}
+			return $objs;
 		}
-		return $objs;
+		else {
+			return $rows;
+		}
 	}
 
 	public function __call($name, $args) {
-		$model = $this->model;
-		$table = $this->db->escape_table($model::$table);
-		$sql = sprintf("SELECT %s(%s) FROM `%s`", $name, implode(', ',$args), $table);
-		$value = $this->db->query($sql, 'fetchColumn');
-		return $value;
+		$scopes = $this->model->scopes();
+		if (! empty($scopes) && array_key_exists($name, $scopes)) {
+			$this->filter($scopes[$name], $args);
+			return $this;
+		}
+		else {
+			$action = "SELECT " . $name . "(" . implode(", ",$args) . ") FROM %s";
+			$value = $this->db->query($this->sql($action), $this->params, 'fetchColumn');
+			return $value;
+		}
 	}
 
 	public function filter($condition, array $params=null) {
-		$this->clause['conds'] []= $condition;
+		$this->conds []= $condition;
 		if (! empty($params)) {
 			$this->params += $params;
 		}
@@ -161,52 +200,60 @@ class DbFactory
 	}
 
 	public function filter_by($data) {
-		$conds = array();
 		foreach ($data as $field => $value) {
-			$conds []= $filed . '=?';
-			$this->params []= $params;
+			$this->_in($field, $value);
 		}
-		$this->clause['conds'] []= implode(' AND ', $conds);
 		return $this;
 	}
 
-	public function filter_or($condition, array $params=null) {
-		$this->clause['or'] []= $condition;
+	public function union($condition, array $params=null) {
+		$this->or_conds []= $condition;
 		if (! empty($params)) {
 			$this->params += $params;
 		}
 		return $this;
 	}
 
-	public function filter_in($field, $params) {
-		if ( is_string($params) ) {
-			$this->clause['conds'] []= $field . 'IN ('. $params .')';
-		}
-		else if ( is_array($params) ) {
-			if ( count($params) <= 1) {
-				$condition =  $field . '=?';
-			}
-			else {
-				$mask = rtrim( str_repeat('?,', count($params)), ',' );
-				$condition = $field . 'IN ('. $mask .')';
-			}
-			$this->clause['conds'] []= $condition;
-			$this->params += $params;
-		}
-		else if ( is_object($params) ) {
-			$this->clause['conds'] []= $field . 'IN ('. $params->sql() .')';
-			$this->params += $params->params;
-		}
-		return $this;
-	}
-
-	public function join() {
-		#TODO:...
+	public function select($fields) {
+		$this->fields = $fields;
 		return $this;
 	}
 
 	public function extra($extra) {
-		$this->clause['extra'] = $extra;
+		$this->extra = $extra;
 		return $this;
+	}
+
+	public function _in($field, $value) {
+		if ( is_array($params) ) {
+			$arrlen = count($params);
+			if ( $arrlen == 0 ) {
+				$value = null;
+			}
+			else if ( $arrlen == 1 ) {
+				$value = array_pop($value);
+			}
+			else {
+				$mask = rtrim( str_repeat('?,', $arrlen), ',' );
+				$this->conds []= $field . ' IN ('. $mask .')';
+				$this->params += $value;
+				return;
+			}
+		}
+		else if ( is_object($value) ) {
+			$this->conds []= $field . ' IN ('. $value->sql() .')';
+			$this->params += $value->params;
+			return;
+		}
+
+		if ( is_null($value) ) {
+			$this->conds []= $field . '=NULL';
+		}
+		else {
+			$value = is_bool($value) ? intval($value) : $value;
+			$this->conds []= $field . '=?';
+			$this->params []= $value;
+		}
+		return;
 	}
 }

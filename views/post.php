@@ -9,10 +9,7 @@ class PostView
 
 	public function indexAction($req) { #首页
 		$slug = $req->args[0];
-		$objs = $req->app->factory('Content')->all(
-			"type='post' AND slug=:slug", array(':slug'=>$slug)
-		);
-		$entry = empty($objs) ? new Content() : $objs[0];
+		$entry = $req->app->factory('Content')->filter_by(array('type'=>'post', 'slug'=>$slug))->get();
 		return array(
 			'requrl' => $req->url,
 			'template_name' => 'entry.php',

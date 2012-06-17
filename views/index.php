@@ -8,7 +8,7 @@ class IndexView
 	}
 
 	public function indexAction($req) { #首页
-		$entries = $req->app->factory('Content')->all("type='post'");
+		$entries = $req->app->factory('Content')->filter_by(array('type'=>'post'))->all();
 		return array(
 			'requrl' => $req->url,
 			'template_name' => 'index.php',

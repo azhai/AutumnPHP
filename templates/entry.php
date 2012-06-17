@@ -7,7 +7,7 @@ function block_entry_content($this, $user, $entry, $comments, $tags) {
 	<div class="post">
 		<h2 class="entry_title"><a href="<?php echo $entry->url ?>"><?php echo $entry->title ?></a></h2>
 		<p class="entry_data">
-			<span><?php echo _t('作者：'); echo $entry->author ?></span>
+			<span><?php echo _t('作者：'); echo $entry->author->screenName ?></span>
 			<span><?php echo _t('发布时间：'); echo date('Y-m-d', $entry->created) ?></span>
 			<?php if ($entry->type == 'post') { ?>
 			<span><?php echo _t('分类：'); echo $entry->h_categories(',') ?></span>

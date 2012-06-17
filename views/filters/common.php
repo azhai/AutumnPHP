@@ -10,8 +10,8 @@ class optionFilter
 	}
 
 	public function before($req) {
-		$rs = $req->app->db()->query('SELECT * FROM t_users LIMIT 1');
-		$this->view->user = cached('user', 0, new User($rs[0]));
+		$user = $req->app->factory('User')->get(1);
+		$this->view->user = cached('user', 0, $user);
 		return true;
 	}
 
@@ -32,13 +32,19 @@ class siderFilter
 	}
 
 	public function after($result) {
-		$pages = cached('app')->db()->query("SELECT * FROM t_contents WHERE type='page'");
-		$create_obj = function($row) {
-			$obj = new Content();
-			$obj->accept($row);
-			return $obj;
-		};
+		$app = cached('app');
 		$result['user'] = $this->view->user;
-		$result['pages'] = array_map($create_obj, $pages);
+		$result['pages'] = $app->factory('Content')->filter_by(
+					array('type'=>'page'))->extra('ORDER BY created')->all();
+		$result['siders'] = array();
+		$result['siders']['posts'] = $app->factory('Content')->filter_by(
+					array('type'=>'post'))->extra('ORDER BY created DESC LIMIT 10')->all();
+		$result['siders']['comments'] = $app->factory('Comment')->extra(
+					'ORDER BY created DESC LIMIT 10')->all();
+		$result['siders']['categories'] = $app->factory('Meta')->filter_by(
+					array('type'=>'category'))->extra('ORDER BY `order`')->all();
+		$result['siders']['archives'] = $app->factory('Content')->filter_by(array('type'=>'post'))->extra(
+					"GROUP BY DATE_FORMAT(FROM_UNIXTIME(created), '%%Y-%%m') ORDER BY created DESC LIMIT 10")->select(
+					"DATE_FORMAT(FROM_UNIXTIME(created), '%%Y-%%m') AS `year_month`, COUNT(*) AS `count`")->all();
 	}
 }
