@@ -9,6 +9,21 @@ defined('PLUGIN_DIR') or define('PLUGIN_DIR', APPLICATION_ROOT . DS . 'plugins')
 error_reporting(E_ALL & ~E_NOTICE);
 
 
+class Procedure
+{
+    public $func = '';
+    public $args = array();
+
+    public function __construct($func) {
+        $this->func = $func;
+    }
+
+    public function emit($args) {
+        return call_user_func_array($this->func, array_merge($this->args, $args));
+    }
+}
+
+
 function call_my_func_array($creator, $params=array()) {
     if (is_array($creator) && $creator[1] == '__construct') {
         $class = new ReflectionClass($creator[0]);

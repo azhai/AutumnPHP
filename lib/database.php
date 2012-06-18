@@ -118,6 +118,7 @@ class DbFactory
 	public $or_conds = array();
 	public $params = array();
 	public $extra = '';
+	public $withes = array();
 
 	public function __construct($model) {
 		$this->model = $model;
@@ -180,7 +181,9 @@ class DbFactory
 		if ($this->fields == "*") {
 			$objs = array();
 			foreach ($rows as $row) {
-				$objs[] = $this->wrap($row);
+				$objs []= $this->wrap($row);
+			}
+			if (! empty($this->withes)) {
 			}
 			return $objs;
 		}
@@ -246,6 +249,11 @@ class DbFactory
 		return $this;
 	}
 
+	public function with() {
+		$this->withes = func_get_args();
+		return $this;
+	}
+
 	public function _in($field, $value) {
 		if ( is_array($params) ) {
 			$arrlen = count($params);
@@ -303,5 +311,30 @@ class DbFactory
 			$params = array_merge($params, $this->params);
 			return $this->db->execute($sql, $params);
 		}
+	}
+
+	public function relate_query($type, $value, $relation=array(), $method='all') {
+		$model = $this->model;
+		$field = $model::$pkeys[0];
+		if ( array_key_exists('extra', $relation) ) {
+			call_user_func_array(array($this, 'filter'), $relation['extra']);
+		}
+		switch ($type) {
+			case 'has_one':
+			case 'has_many':
+				$field = $relation['field'];
+				break;
+			case 'many_many':
+				$query = DbFactory::init($relation['middle'], $this->db);
+				if ( array_key_exists('mid_extra', $relation) ) {
+					$query = call_user_func_array(array($query, 'filter'), $relation['mid_extra']);
+				}
+				$rkey = isset($relation['rkey']) ? $relation['rkey'] : strtolower(get_class($this->model)) . '_id';
+				$value = $query->filter_by($value)->select($rkey);
+				break;
+			case 'belongs_to':
+				break;
+		}
+		return $this->filter_by(array($field=>$value))->$method();
 	}
 }
