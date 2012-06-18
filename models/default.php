@@ -2,14 +2,14 @@
 
 class User extends Model
 {
-	public static $table = 't_users';
+	public static $table = 'users';
     public static $pkeys = array('uid');
 }
 
 
 class Meta extends Model
 {
-	public static $table = 't_metas';
+	public static $table = 'metas';
     public static $pkeys = array('mid');
 
     public function relations() {
@@ -23,14 +23,14 @@ class Meta extends Model
 
 class Comment extends Model
 {
-	public static $table = 't_comments';
+	public static $table = 'comments';
     public static $pkeys = array('coid');
 }
 
 
 class Content extends Model
 {
-	public static $table = 't_contents';
+	public static $table = 'contents';
     public static $pkeys = array('cid');
 
     public function relations() {
@@ -80,12 +80,13 @@ class Content extends Model
 
 class Option extends Model
 {
-	public static $table = 't_options';
+	public static $table = 'options';
     public static $pkeys = array('name', 'user');
 
 	public function __construct($user=0) {
-        $sql = sprintf("SELECT * FROM `%s` WHERE user=?", self::$table);
 		$factory = cached('app')->factory( get_class($this) );
+		$table = $factory->db->escape_table(self::$table);
+        $sql = sprintf("SELECT * FROM %s WHERE user=?", $table);
 		$rows = $factory->db->query($sql, array($user));
 		foreach ($rows as $row) {
 			$this->_data_[ $row['name'] ] = $row['value'];

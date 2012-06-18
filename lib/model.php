@@ -48,6 +48,12 @@ class Model extends ReadOnly
 		return array();
 	}
 
+	public function __isset($prop) {
+		return array_key_exists($prop, $this->_changes_)
+			|| array_key_exists($prop, $this->_data_)
+			|| array_key_exists($prop, $this->_reldata_);
+	}
+
 	public function __get($prop) {
 		if (method_exists($this, 'get_' . $prop)) {
 			return call_user_func(array($this, 'get_' . $prop));
@@ -86,17 +92,49 @@ class Model extends ReadOnly
 		return ! empty($this->_changes_);
 	}
 
-    public function save() {
-        if ($this->_state_ == 'NEW') { //新增
-        } elseif ($this->_state_ == 'DIRTY') { //修改
+    public function save(array $data=null, $create=false) {
+		if (! empty($data)) {
+			foreach ($data as $key => $val) {
+				$this->$key = $val;
+			}
+		}
+		$class = get_class($this);
+		$factory = cached('app')->factory($class);
+		$pkeys = $class::$pkeys;
+        if ( empty($this->_data_) ) { //新增
+			$id = $factory->write($this->_changes_, 'INSERT');
+			if ( count($pkeys) == 1 ) {
+				$this->_data_[ $pkeys[0] ] = $id;
+			}
+        } elseif ( $this->is_dirty() ) { //修改
+			$pvals = array();
+			foreach ($pkeys as $pkey) {
+				$pvals []= isset($this->_data_[$pkey]) ? $this->_data_[$pkey] : null;
+			}
+			$factory->bind($pvals)->write($this->_changes_);
         }
-		$this->_state_ = '';
+		$this->_data_ = array_merge($this->_data_, $this->_changes_);
+		$this->_changes_ = array();
     }
 
-    public function delete() {
-        if ($this->_state_ != 'DELETED') { //删除
+    public function delete(array $disable=null) {
+        if ( !empty($this->_data_) ) {
+			$class = get_class($this);
+			$factory = cached('app')->factory($class);
+			$pkeys = $class::$pkeys;
+			$pvals = array();
+			foreach ($pkeys as $pkey) {
+				$pvals []= isset($this->_data_[$pkey]) ? $this->_data_[$pkey] : null;
+			}
+			if (! empty($disable)) { //禁用
+				$factory->bind($pvals)->write($disable);
+			}
+			else { //删除
+				$factory->bind($pvals)->write(null, 'DELETE');
+			}
         }
-        $this->_state_ == 'DELETED';
+		$this->_data_ = array();
+        $this->_changes_ = array();;
     }
 
 	public function relate_with($prop, $relation) {
@@ -105,16 +143,19 @@ class Model extends ReadOnly
 		if ( array_key_exists('extra', $relation) ) {
 			$factory = call_user_func_array(array($factory, 'filter'), $relation['extra']);
 		}
-		switch (strtolower($relation['type'])) {
+		$type = strtolower($relation['type']);
+		switch ($type) {
 			case 'belongs_to':
 				$fkey = $relation['fkey'];
 				$data = $factory->get($this->$fkey);
 				break;
+			case 'has_one':
 			case 'has_many':
 				$class = get_class($this);
 				$fkey = isset($relation['fkey']) ? $relation['fkey'] : $class::$pkeys[0];
 				$field = $relation['field'];
-				$data = $factory->filter_by(array($field=>$this->$fkey))->all();
+				$method = $type == 'has_one' ? 'get' : 'all';
+				$data = $factory->filter_by(array($field=>$this->$fkey))->$method();
 				break;
 			case 'many_many':
 				$middle = $relation['middle'];

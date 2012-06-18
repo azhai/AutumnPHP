@@ -5,6 +5,6 @@ return array(
 		'max_router_layer' => 2,
 	),
     'databases' => array(
-        'default' => array('mysql:host=localhost;dbname=db_blog', 'ryan', 'ryan'),
+        'default' => array('mysql:host=localhost;dbname=db_blog', 'ryan', 'ryan', 't_'),
     ),
 );

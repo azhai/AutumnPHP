@@ -70,9 +70,12 @@ class Database
             $conn->rollBack();
 			trigger_error("DB execute failed:" . $e->getMessage(), E_USER_ERROR);
         }
-        if (! empty($affected)) {
-            return $conn->$affected();  #lastInsertId / rowCount
+        if ($affected == 'lastInsertId') {
+            return $conn->lastInsertId();
         }
+		else if ($affected == 'rowCount') {
+			return $stmt->rowCount();
+		}
     }
 
     /*执行查询操作*/
@@ -126,7 +129,7 @@ class DbFactory
 		return $obj;
 	}
 
-	public function sql($action="") {
+	public function sql($head="", $unextra=false) {
 		$model = $this->model;
 		if ( empty($this->table) ) {
 			$this->table = $this->db->escape_table($model::$table);
@@ -139,23 +142,17 @@ class DbFactory
 			$conds = "(" . $conds . implode(") OR (", $this->or_conds) . ")";
 		}
 		$conds = empty($conds) ? "" : "WHERE " . $conds;
-		if ( empty($action) ) {
-			$action = "SELECT " . $this->fields . " FROM %s";
+		if ( empty($head) ) {
+			$head = "SELECT " . $this->fields . " FROM %s";
 		}
-		$sql = rtrim(sprintf($action . " %s %s", $this->table, $conds, $this->extra));
+		$extra = $unextra ? "" : $this->extra;
+		$sql = rtrim(sprintf($head . " %s %s", $this->table, $conds, $extra));
 		return $sql;
 	}
 
 	public function get() { //传对应各主键的值
 		if(func_num_args() > 0) {
-			$model = $this->model;
-			$pkeys = $model::$pkeys;
-			$ids = func_get_args();
-			foreach ($ids as $i => $id) {
-				if (! is_null($id)) {
-					$this->_in($pkeys[$i], $id);
-				}
-			}
+			$this->bind( func_get_args() );
 		}
 		$row = $this->db->query($this->sql(), $this->params, 'fetch');
 		return $this->fields == "*" ? $this->wrap($row) : $row;
@@ -185,10 +182,21 @@ class DbFactory
 			return $this;
 		}
 		else {
-			$action = "SELECT " . $name . "(" . implode(", ",$args) . ") FROM %s";
-			$value = $this->db->query($this->sql($action), $this->params, 'fetchColumn');
+			$head = "SELECT " . $name . "(" . implode(", ",$args) . ") FROM %s";
+			$value = $this->db->query($this->sql($head), $this->params, 'fetchColumn');
 			return $value;
 		}
+	}
+
+	public function bind(array $ids) {
+		$model = $this->model;
+		$pkeys = $model::$pkeys;
+		foreach ($ids as $i => $id) {
+			if (! is_null($id)) {
+				$this->_in($pkeys[$i], $id);
+			}
+		}
+		return $this;
 	}
 
 	public function filter($condition, array $params=null) {
@@ -255,5 +263,31 @@ class DbFactory
 			$this->params []= $value;
 		}
 		return;
+	}
+
+	public function write(array $data=null, $action='UPDATE') {
+		$action = strtoupper($action);
+		if ( $action == 'INSERT' || $action == 'REPLACE'  ) {
+			$fields = implode(',', array_keys($data));
+			$params = array_values($data);
+			$mask = rtrim(str_repeat('?,', count($data)), ',');
+			$sql = sprintf("%s INTO %s(%s) VALUES(%s)", $action, $table, $fields, $mask);
+			return $this->db->execute($sql, $params, 'lastInsertId');
+		}
+		else if ( $action == 'DELETE' ) {
+			$sql = $this->sql("DELETE FROM %s", true);
+			return $this->db->execute($sql, $this->params);
+		}
+		else {
+			$mask = array();
+			$params = array();
+			foreach ($data as $key => $val) {
+				$mask []= $key . "=?";
+				$params []= $val;
+			}
+			$sql = $this->sql("UPDATE %s SET " . implode(", ", $mask), true);
+			$params = array_merge($params, $this->params);
+			return $this->db->execute($sql, $params);
+		}
 	}
 }
