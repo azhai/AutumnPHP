@@ -58,19 +58,35 @@ class Database
 		return sprintf('`%s%s`', $this->prefix, $table);
 	}
 
+	public function quote($args) {
+		$conn = $this->connect();
+		if ( is_array($args) ) {
+			$qargs = array();
+			foreach ($args as $arg) {
+				$qargs []= $conn->quote($arg, PDO::PARAM_STR);
+			}
+			return $qargs;
+		}
+		else {
+			return $conn->quote($args, PDO::PARAM_STR);
+		}
+	}
+
     /*执行修改操作*/
     public function execute($sql, $args=array(), $insert_id=false) {
         $conn = $this->connect();
-		$stmt = $conn->prepare($sql);
+		//$stmt = $conn->prepare($sql);
 		try {
 			$conn->beginTransaction();
-			$stmt->execute($args);
+			//$stmt->execute($args);
+			$sql = vsprintf(str_replace("?", "%s", $sql), $this->quote($args));
+			$conn->exec($sql);
 			$conn->commit();
 		} catch(PDOException $e) {
             $conn->rollBack();
 			trigger_error("DB execute failed:" . $e->getMessage(), E_USER_ERROR);
         }
-        $stmt->closeCursor();
+        //$stmt->closeCursor();
         if ($insert_id) {
             return $conn->lastInsertId();
         }
