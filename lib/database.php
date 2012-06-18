@@ -59,7 +59,7 @@ class Database
 	}
 
     /*执行修改操作*/
-    public function execute($sql, $args=array(), $affected='') {
+    public function execute($sql, $args=array(), $insert_id=false) {
         $conn = $this->connect();
 		$stmt = $conn->prepare($sql);
 		try {
@@ -70,12 +70,10 @@ class Database
             $conn->rollBack();
 			trigger_error("DB execute failed:" . $e->getMessage(), E_USER_ERROR);
         }
-        if ($affected == 'lastInsertId') {
+        $stmt->closeCursor();
+        if ($insert_id) {
             return $conn->lastInsertId();
         }
-		else if ($affected == 'rowCount') {
-			return $stmt->rowCount();
-		}
     }
 
     /*执行查询操作*/
@@ -272,7 +270,7 @@ class DbFactory
 			$params = array_values($data);
 			$mask = rtrim(str_repeat('?,', count($data)), ',');
 			$sql = sprintf("%s INTO %s(%s) VALUES(%s)", $action, $table, $fields, $mask);
-			return $this->db->execute($sql, $params, 'lastInsertId');
+			return $this->db->execute($sql, $params, true);
 		}
 		else if ( $action == 'DELETE' ) {
 			$sql = $this->sql("DELETE FROM %s", true);
