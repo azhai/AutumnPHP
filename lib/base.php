@@ -4,99 +4,34 @@ defined('APPLICATION_ROOT') or define('APPLICATION_ROOT', dirname(dirname(__FILE
 defined('MODEL_DIR') or define('MODEL_DIR', APPLICATION_ROOT . DS . 'models');
 defined('VIEW_DIR') or define('VIEW_DIR', APPLICATION_ROOT . DS . 'views');
 defined('TEMPLATE_DIR') or define('TEMPLATE_DIR', APPLICATION_ROOT . DS . 'templates');
-defined('PLUGIN_DIR') or define('PLUGIN_DIR', APPLICATION_ROOT . DS . 'plugins');
+require_once(APPLICATION_ROOT . DS . 'lib' . DS . 'common.php');
 
 error_reporting(E_ALL & ~E_NOTICE);
 
 
-class Procedure
-{
-    public $func = '';
-    public $args = array();
-
-    public function __construct($func) {
-        $this->func = $func;
-    }
-
-    public function emit($args) {
-        return call_user_func_array($this->func, array_merge($this->args, $args));
-    }
-}
-
-
-function call_my_func_array($creator, $params=array()) {
-    if (is_array($creator) && $creator[1] == '__construct') {
-        $class = new ReflectionClass($creator[0]);
-        return $class->newInstanceArgs($params);
-    }
-    else {
-        return call_user_func_array($creator, $params);
-    }
-}
-
-
-function cached($class, $id=0) {
-	/*
-	#TODO:
-	backend_get() {}
-	backend_set() {}
-	*/
-    static $objects = array(); //对象注册表
-    $arglen = func_num_args();
-    //$singlon = $id == 0; //是否单例
-
-    if (! array_key_exists($class, $objects)) {
-        $objects[$class] = array();
-    }
-    if ($arglen == 3) { //存放对象
-        $instance = func_get_arg(2);
-        $objects[$class][$id] = & $instance;
-        return $instance;
-    }
-
-    if (! array_key_exists($id, $objects[$class])) {
-        if ($arglen == 2) { //获取对象
-            return;
-        }
-        else if ($arglen == 4) { //获取或创建对象
-            $instance = call_my_func_array(func_get_arg(2), func_get_arg(3));
-            $objects[$class][$id] = & $instance;
-            return $instance;
-        }
-    }
-    else { //获取对象
-        return $objects[$class][$id];
-    }
-}
-
-
-function camelize($underscored_word) {
-    $humanize_word = ucwords(str_replace('_', ' ', $underscored_word));
-    return str_replace(' ', '', $humanize_word);
-}
-
-
 function invoke_view($view_obj, $req) {
+	//当$view不存在$action动作时，执行默认的index动作，并将$action作为动作的第一个参数
 	if (! method_exists($view_obj, $req->action . 'Action')) {
 		array_unshift($req->args, $req->action);
 		$req->action = 'index';
 	}
+	//找出当前action对应哪些Filters
 	$filter_objects = array();
 	$filters = null;
 	if (method_exists($view_obj, 'filters')) {
 		$filters = $view_obj->filters($req->action);
 	}
 	$filters = empty($filters) ? array() : $filters;
-
+	//按顺序执行Filters的before检查，未通过跳转到404错误页面
 	foreach($filters as $filter) {
-		$filter_obj = call_my_func_array(
-			array($filter . 'Filter', '__construct'), array(& $view_obj)
-		);
+		$construct = new Constructor($filter . 'Filter', array(& $view_obj));
+		$filter_obj = $construct->emit();
 		if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
-			return;
+			return $req->error(404);
 		}
 		array_push($filter_objects, $filter_obj);
 	}
+	//执行action动作，再按逆序执行Filters的after包装，修改返回的结果$result
 	$result = call_user_func(array($view_obj, $req->action . 'Action'), & $req);
 	while ($filter_obj = array_pop($filter_objects)) {
 		if (method_exists($filter_obj, 'after')) {
@@ -104,19 +39,6 @@ function invoke_view($view_obj, $req) {
 		}
 	}
 	return $result;
-}
-
-
-function load_plugin($file, $creator=null, $params=array(), $imports=array()) {
-	foreach ($imports as $import_file) {
-		require_once PLUGIN_DIR . DS . $import_file;
-	}
-	$plugin_file = PLUGIN_DIR . DS . $file;
-	if ($file && file_exists($plugin_file) && is_file($plugin_file)) {
-		require_once $plugin_file;
-	}
-	$creator = empty($creator) ? ucfirst(basename($file, '.php')) : $creator;
-	return is_string($creator) ? $creator : call_my_func_array($creator, $params);
 }
 
 
@@ -129,10 +51,11 @@ class Application
     public $max_router_layer = 2; //view文件与目录最多两层
 
     public function __construct($config_filename) {
+		//加载配置文件，将basic段的配置加载为实例的属性
         $this->configs = new ReadOnly(include $config_filename);
 		$basic_configs = empty($this->configs->basic) ? array() : $this->configs->basic;
 		foreach ($basic_configs as $key=>$value) {
-			if ($key != 'configs') {
+			if ($key != 'configs') { //防止覆盖了配置文件本身
 				$this->$key = $value;
 			}
 		}
@@ -141,7 +64,8 @@ class Application
     public function db($schema='default') {
         if ( array_key_exists($schema, $this->configs->databases) ) {
             $config = $this->configs->databases[$schema];
-            return cached('db', $schema, array('Database', '__construct'), $config);
+			$construct = new Constructor('Database', $config);
+            return cached('db', $schema, null, $construct);
         }
     }
 
@@ -152,11 +76,19 @@ class Application
 			$schema = $model::$schema;
 		}
         if ( array_key_exists($schema, $this->configs->databases) ) {
-            $config = $this->configs->databases[$schema];
-            $factory->db = cached('db', $schema, array('Database', '__construct'), $config);
+            $factory->db = $this->db($schema);
         }
 		return $factory;
     }
+
+    public function plugin($file, $name='', $args=array(), $imports=array()) {
+		array_unshift($imports, $file);
+		if ( empty($name) ) {
+			$name = ucfirst( basename($name, '.php') );
+		}
+		$construct = new Constructor($name, $args, $imports);
+		return cached('plugin', $name, null, $construct);
+	}
 
     public function run() {
         $req = cached('req', 0, new Request($this));
@@ -170,9 +102,8 @@ class Application
         $view = camelize(ltrim(substr($req->file, 0, -4), '/'));
         if (class_exists($view . 'View')) {
             $req->view = $view;
-            $view_obj = call_my_func_array(
-                array($req->view . 'View', '__construct')
-            );
+			$construct = new Constructor($req->view . 'View');
+            $view_obj =  $construct->emit();
 			invoke_view($view_obj, $req);
         }
     }
@@ -183,9 +114,6 @@ class Application
             require_once(APPLICATION_ROOT . DS . self::$builtins[$klass]);
         } else { //自动加载models下的类
             $filenames = glob(MODEL_DIR . DS . '*.php');
-            if (empty($filenames)) {
-                return false;
-            }
             foreach ($filenames as $filename) {
                 require_once($filename);
                 if (class_exists($klass, false)) {
@@ -201,11 +129,9 @@ class Application
         'Database' => 'lib/database.php',
         'DbFactory' => 'lib/database.php',
         'Model' => 'lib/model.php',
-        'ReadOnly' => 'lib/model.php',
         'Request' => 'lib/request.php',
         'Template' => 'lib/template.php',
     );
 }
 
 spl_autoload_register(array('Application','autoload'));
-#an('app', 0, new Application('config.php'))->run();

@@ -1,6 +1,7 @@
 <?php
 defined('APPLICATION_ROOT') or die();
 
+
 function url_for() {
     return '/' . implode('/', func_get_args() );
 }

@@ -1,37 +1,20 @@
 <?php
-
-class ReadOnly
-{
-	protected $_changes_ = array();
-
-	public function __construct(array $data=null) {
-        if (! empty($data)) {
-            $this->_changes_ = $data;
-        }
-    }
-
-	public function __isset($prop) {
-		return array_key_exists($prop, $this->_changes_);
-	}
-
-	public function __get($prop) {
-		if (array_key_exists($prop, $this->_changes_)) {
-			return $this->_changes_[$prop];
-		}
-	}
-}
+defined('APPLICATION_ROOT') or die();
 
 
-class Model extends ReadOnly
+class Model
 {
 	protected $_data_ = array();  		#数据
+	protected $_changes_ = array();     #脏数据
 	protected $_reldata_ = array();  	#关系数据
 	public static $schema = 'default';  #数据库连接
 	public static $table = ''; 			#数据表名
 	public static $pkeys = array('id');  #主键名
 
     public function __construct(array $row=null) {
-        parent::__construct($row);
+        if (! empty($data)) {
+            $this->_changes_ = $data;
+        }
     }
 
 	public function accept(array $row=null) {

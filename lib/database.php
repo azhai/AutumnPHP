@@ -1,4 +1,6 @@
 <?php
+defined('APPLICATION_ROOT') or die();
+
 
 function get_row_id($row, $pkeys) {
 	if ( count($pkeys) == 1 ) {
