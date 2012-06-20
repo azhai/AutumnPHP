@@ -106,6 +106,9 @@ class Application
             $view_obj =  $construct->emit();
 			invoke_view($view_obj, $req);
         }
+		if ($this->debug) { //输出执行过的SQL语句
+			$this->db()->verbose();
+		}
     }
 
     public static function autoload($klass)

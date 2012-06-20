@@ -25,6 +25,7 @@ class Database
     private $password = '';
     private $prefix = '';
 	protected $conn = null;
+	public static $sql_history = array();
 
     public function __construct($dsn, $user='', $password='', $prefix='') {
         $this->dsn = $dsn;
@@ -77,11 +78,12 @@ class Database
     /*执行修改操作*/
     public function execute($sql, $args=array(), $insert_id=false) {
         $conn = $this->connect();
+		$sql = $this->dump($sql, $args);
+		self::$sql_history []= array($sql, array());
 		//$stmt = $conn->prepare($sql);
 		try {
 			$conn->beginTransaction();
 			//$stmt->execute($args);
-			$sql = vsprintf(str_replace("?", "%s", $sql), $this->quote($args));
 			$conn->exec($sql);
 			$conn->commit();
 		} catch(PDOException $e) {
@@ -97,6 +99,7 @@ class Database
     /*执行查询操作*/
     public function query($sql, $args=array(), $fetch='fetchAll') {
         $conn = $this->connect();
+		self::$sql_history []= array($sql, array());
 		$stmt = $conn->prepare($sql);
         $stmt->execute($args);
 		try {
@@ -107,6 +110,25 @@ class Database
         $stmt->closeCursor();
         return $result;
     }
+
+	/*生成可打印的SQL语句*/
+	public function dump($sql, $args=array()) {
+		if (strpos($sql, "%")) {
+			$sql = str_replace("%%", "%", $sql);
+			$sql = str_replace("%", "%%", $sql);
+		}
+		$sql = str_replace("?", "%s", $sql);
+		return vsprintf($sql, $this->quote($args));
+	}
+
+	public function verbose() {
+		foreach (self::$sql_history as $i => $line) {
+			list($sql, $args) = $line;
+			echo ($i + 1) . ": ";
+			echo empty($args) ? $sql : $this->dump($sql, $args);
+			echo "; <br />\n";
+		}
+	}
 }
 
 
@@ -115,6 +137,7 @@ class DbFactory
 	public $model = null;
 	public $table = '';
 	public $db = null;
+
 	public $fields = '*';
 	public $conds = array();
 	public $or_conds = array();
@@ -185,8 +208,14 @@ class DbFactory
 			foreach ($rows as $row) {
 				$objs []= $this->wrap($row);
 			}
-			if (! empty($this->withes)) {
-			}
+			/*if (! empty($this->withes)) {
+				$relations = $this->relations();
+				foreach ($this->withes as $prop) {
+					$relation = $relations[$prop];
+					$type = strtolower($relation['type']);
+					$reldata = $this->relate_query($type, $vals, $relation);
+				}
+			}*/
 			return $objs;
 		}
 		else {

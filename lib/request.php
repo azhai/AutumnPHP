@@ -24,13 +24,17 @@ class Request
 	}
 
     public function parse() {
-        /* #TODO: 先检查$this->routers中缓存的正则URL对应的结果
-         if ($this->url MATCH A KEY IN $this->routers) {
-            foreach ($this->routers[KEY] as $prop => $value) {
-                $this->$prop = $value;
-            }
-            return true;
-         }*/
+		//先检查$this->app->routers中缓存的正则URL对应的结果
+		foreach ($this->app->routers as $pattern => $router) {
+			if ( preg_match($pattern, $this->url, $matches) ) {
+				foreach ($router as $prop => $value) {
+					$this->$prop = $value;
+				}
+				array_shift($matches);
+				$this->args = array_merge($matches, $this->args);
+				return true;
+			 }
+		}
 
         $limit = $this->app->max_router_layer + 1;
         $pics = preg_split('/\//', $this->url, $limit + 1,
