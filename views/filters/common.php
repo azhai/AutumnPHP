@@ -1,50 +1,51 @@
 <?php
-require_once(MODEL_DIR . DS . 'default.php');
+defined('APPLICATION_ROOT') or die();
 
 class optionFilter
 {
-	protected $view = null;
+    protected $view = null;
 
-	public function __construct($view) {
-		$this->view = $view;
-	}
+    public function __construct($view) {
+        $this->view = $view;
+    }
 
-	public function before($req) {
-		$user = $req->app->factory('User')->get(1);
-		$this->view->user = cached('user', 0, $user);
-		return true;
-	}
+    public function before($req) {
+        $user = $req->app->db()->factory('users')->get(1);
+        $this->view->user = cached('user', 0, $user);
+        return true;
+    }
 
-	public function after($result) {
-		$result['options'] = new Option();
-		$t = new Template( $result['template_name'] );
-		$t->render($result);
-	}
+    public function after($result) {
+        $result['options'] = Options::instance();
+        $t = new AuTemplate( $result['template_name'] );
+        $t->render($result);
+    }
 }
 
 
 class siderFilter
 {
-	protected $view = null;
+    protected $view = null;
 
-	public function __construct($view) {
-		$this->view = $view;
-	}
+    public function __construct($view) {
+        $this->view = $view;
+    }
 
-	public function after($result) {
-		$app = cached('app');
-		$result['user'] = $this->view->user;
-		$result['pages'] = $app->factory('Content')->filter_by(
-					array('type'=>'page'))->extra('ORDER BY created')->all();
-		$result['siders'] = array();
-		$result['siders']['posts'] = $app->factory('Content')->filter_by(
-					array('type'=>'post'))->extra('ORDER BY created DESC LIMIT 10')->all();
-		$result['siders']['comments'] = $app->factory('Comment')->extra(
-					'ORDER BY created DESC LIMIT 10')->all();
-		$result['siders']['categories'] = $app->factory('Meta')->filter_by(
-					array('type'=>'category'))->extra('ORDER BY `order`')->all();
-		$result['siders']['archives'] = $app->factory('Content')->filter_by(array('type'=>'post'))->extra(
-					"GROUP BY DATE_FORMAT(FROM_UNIXTIME(created), '%%Y-%%m') ORDER BY created DESC LIMIT 10")->select(
-					"DATE_FORMAT(FROM_UNIXTIME(created), '%%Y-%%m') AS `year_month`, COUNT(*) AS `count`")->all();
-	}
+    public function after($result) {
+        $db = app()->db();
+        $result['user'] = $this->view->user;
+        $result['pages'] = $db->factory('contents')->filter_by(array('type'=>'page')
+                )->order_by('created')->all();
+        $result['siders'] = array();
+        $result['siders']['posts'] = $db->factory('contents')->filter_by(array('type'=>'post')
+                )->order_by('created DESC')->page(1, 10);
+        $result['siders']['comments'] = $db->factory('comments')->order_by('created DESC'
+                )->page(1, 10);
+        $result['siders']['categories'] = $db->factory('metas')->filter_by(array('type'=>'category')
+                )->order_by('`order`')->all();
+        $result['siders']['archives'] = $db->factory('contents')->filter_by(array('type'=>'post')
+                )->group_by("DATE_FORMAT(FROM_UNIXTIME(created), '%Y-%m')"
+                )->order_by('created DESC')->page(1, 10, false,
+                "DATE_FORMAT(FROM_UNIXTIME(created), '%Y-%m') AS `year_month`, COUNT(*) AS `count`");
+    }
 }

@@ -1,7 +1,7 @@
 <?php
-
-require_once('lib/base.php');
-
-cached('app', 0, new Application('config.php'))->run();
-
+defined('APPLICATION_ROOT') or define('APPLICATION_ROOT', dirname(__FILE__));
+require_once(APPLICATION_ROOT . '/lib/common.php');
+app()->run();
+echo "-----------------------------------------------------------------------<br />\n";
+app()->db()->dump_all();
 ?>
