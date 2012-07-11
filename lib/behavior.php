@@ -2,6 +2,55 @@
 defined('APPLICATION_ROOT') or die();
 
 
+class AuFetchObject extends AuProcedure
+{
+    public function __construct($subject, $method, $schema)
+    {
+        parent::__construct($subject, $method);
+        $this->schema = $schema;
+    }
+
+    public function emit($stmt)
+    {
+        $row = $stmt->fetch();
+        if ( $row === false ) {
+            return null;
+        }
+        else {
+            $func = array($this->subject, $this->method);
+            return call_user_func($func, $row, $this->schema);
+        }
+    }
+}
+
+
+class AuFetchAll extends AuConstructor
+{
+    public $add_row = null;
+
+    public function __construct($subject, $schema, $add_row=null)
+    {
+        parent::__construct($subject);
+        $this->schema = $schema;
+        $this->add_row = $add_row;
+    }
+
+    public function emit($stmt)
+    {
+        $result = new $this->subject;
+        $result->set_schema($this->schema);
+        if ( is_null($this->add_row) ) {
+            $this->add_row = array($result, 'add_row');
+        }
+        $i = 0;
+        while ($row = $stmt->fetch()) {
+            call_user_func($this->add_row, $row, $i++, & $result);
+        }
+        return $result;
+    }
+}
+
+
 class AuBehavior extends AuProcedure
 {
 	public $steps = array();

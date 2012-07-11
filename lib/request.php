@@ -3,6 +3,11 @@ defined('APPLICATION_ROOT') or die();
 defined('VIEW_DIR') or define('VIEW_DIR', APPLICATION_ROOT . DS . 'views');
 
 
+function url_for() {
+    return '/' . implode('/', func_get_args() );
+}
+
+
 class AuRequest
 {
     public $app = null;

@@ -70,7 +70,7 @@ class AuSchema extends AuConfigure
         foreach ($tables as $table) {
             $tblname = strtolower( substr($table, $strip_lenth) );
             $desc[$tblname] = self::parse_table($table, $db);
-            $model = ucfirst($tblname);
+            $model = camelize($tblname);
             if ( class_exists($model) && is_subclass_of($model, 'AuRowObject') ) {
                 $desc[$tblname]['model'] = $model;
             }
@@ -108,7 +108,6 @@ class AuRowObject extends ArrayObject
     private $_state_ = '';
     protected $_schema_ = null;
     protected $_behaviors_ = array();
-    protected static $_objects_ = array();
 
     public function __construct($data=array(), $schema=null)
     {
@@ -127,46 +126,19 @@ class AuRowObject extends ArrayObject
 
     public static function wrap($row, $schema)
     {
-        $collection = self::get_collection($schema);
+        $collection = AuDatabase::get_collection($schema);
         $pkey_arr = $schema->pkey_array;
         $id = slice_assoc($row, $pkey_arr);
-        $obj = self::get($collection, $id);
+        $obj = AuDatabase::get($collection, $id);
         if ( is_null($obj) ) {
             $model = $schema->get_model('AuRowObject');
             $constructor = new AuConstructor($model, array($row, $schema));
             $obj = $constructor->emit();
             $id = is_array($id) ? implode(':', $id) : $id;
             //$collection[$id] = & $obj;
-            self::$_objects_[ $schema->dbname ][ $schema->tblname ][$id] = & $obj;
+            AuDatabase::$objects[ $schema->dbname ][ $schema->tblname ][$id] = & $obj;
         }
         return $obj;
-    }
-
-    public static function & get_collection($schema)
-    {
-        if ( ! array_key_exists($schema->dbname, self::$_objects_) ) {
-            self::$_objects_[ $schema->dbname ] = array();
-        }
-        if ( ! array_key_exists($schema->tblname, self::$_objects_[ $schema->dbname ]) ) {
-            self::$_objects_[ $schema->dbname ][ $schema->tblname ] = array();
-        }
-        $collection = self::$_objects_[ $schema->dbname ][ $schema->tblname ];
-        return $collection;
-    }
-
-    public static function get($collection, $id)
-    {
-        $id = is_array($id) ? implode(':', $id) : $id;
-        if ( array_key_exists($id, $collection) ) {
-            $obj = $collection[$id];
-            if ( $obj->state == 'DELETED' ) {
-                unset($collection[$id]);
-                return null;
-            }
-            else {
-                return $obj;
-            }
-        }
     }
 
     public function get_state()
@@ -303,7 +275,7 @@ class AuRowSet extends ArrayIterator
 
     public static function id_row($row, $index, $result)
     {
-        $pkey = $this->get_schema()->get_pkey();
+        $pkey = 'id';
         $result->offsetSet($row[$pkey], $row);
     }
 

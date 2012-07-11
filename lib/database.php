@@ -30,6 +30,7 @@ class AuDatabase
     private $password = '';
     public $prefix = '';
 
+    public static $objects = array();
     public static $sql_history = array();
 
     public function __construct($dsn, $user='', $password='', $prefix='')
@@ -154,7 +155,34 @@ class AuDatabase
             echo empty($args) ? $sql : $this->dump($sql, $args);
             echo "; <br />\n";
         }
-        return $return ? ob_get_flush() : ob_end_flush();
+        return $return ? ob_get_clean() : ob_end_flush();
+    }
+
+    public static function & get_collection($schema)
+    {
+        if ( ! array_key_exists($schema->dbname, self::$objects) ) {
+            self::$objects[ $schema->dbname ] = array();
+        }
+        if ( ! array_key_exists($schema->tblname, self::$objects[ $schema->dbname ]) ) {
+            self::$objects[ $schema->dbname ][ $schema->tblname ] = array();
+        }
+        $collection = self::$objects[ $schema->dbname ][ $schema->tblname ];
+        return $collection;
+    }
+
+    public static function get($collection, $id)
+    {
+        $id = is_array($id) ? implode(':', $id) : $id;
+        if ( array_key_exists($id, $collection) ) {
+            $obj = $collection[$id];
+            if ( $obj->state == 'DELETED' ) {
+                unset($collection[$id]);
+                return null;
+            }
+            else {
+                return $obj;
+            }
+        }
     }
 
     public function get_or_create($tblname, $id=null)
@@ -193,59 +221,9 @@ class AuDatabase
         if ( ! empty($pkey_vals) ) {
             $query = $this->factory($schema->tblname)->filter_by($pkey_vals);
             $query->delete();
-            $collection = AuRowObject::get_collection($schema);
             $id = implode(':', array_values($pkey_vals));
-            unset($collection[$id]);
+            unset(self::$objects[ $schema->dbname ][ $schema->tblname ][$id]);
         }
-    }
-}
-
-
-class AuFetchObject extends AuProcedure
-{
-    public function __construct($subject, $method, $schema)
-    {
-        parent::__construct($subject, $method);
-        $this->schema = $schema;
-    }
-
-    public function emit($stmt)
-    {
-        $row = $stmt->fetch();
-        if ( $row === false ) {
-            return null;
-        }
-        else {
-            $func = array($this->subject, $this->method);
-            return call_user_func($func, $row, $this->schema);
-        }
-    }
-}
-
-
-class AuFetchAll extends AuConstructor
-{
-    public $add_row = null;
-
-    public function __construct($subject, $schema, $add_row=null)
-    {
-        parent::__construct($subject);
-        $this->schema = $schema;
-        $this->add_row = $add_row;
-    }
-
-    public function emit($stmt)
-    {
-        $result = new $this->subject;
-        $result->set_schema($this->schema);
-        if ( is_null($this->add_row) ) {
-            $this->add_row = array($result, 'add_row');
-        }
-        $i = 0;
-        while ($row = $stmt->fetch()) {
-            call_user_func($this->add_row, $row, $i++, & $result);
-        }
-        return $result;
     }
 }
 
@@ -388,8 +366,8 @@ class AuQuery
     public function get($id=null)
     {
         if ( ! is_null($id) ) {
-            $collection = AuRowObject::get_collection($this->schema);
-            $obj = AuRowObject::get($collection, $id);
+            $collection = AuDatabase::get_collection($this->schema);
+            $obj = AuDatabase::get($collection, $id);
             if ( ! is_null($obj) ) {
                 return $obj;
             }

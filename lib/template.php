@@ -3,6 +3,11 @@ defined('APPLICATION_ROOT') or die();
 defined('TEMPLATE_DIR') or define('TEMPLATE_DIR', APPLICATION_ROOT . DS . 'templates');
 
 
+function _t($word) { //I18N翻译函数
+    return $word;
+}
+
+
 /**
  * 模板类，带有布局Layout和板块Block
  */

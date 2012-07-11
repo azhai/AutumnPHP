@@ -18,6 +18,8 @@ function autoload($klass)
         'AuConnection' => 'database.php',
         'AuConstructor' => 'core.php',
         'AuDatabase' => 'database.php',
+        'AuFetchObject' => 'behavior.php',
+        'AuFetchAll' => 'behavior.php',
         'AuHasMany' => 'behavior.php',
         'AuHasOne' => 'behavior.php',
         'AuLiteral' => 'database.php',
@@ -55,16 +57,6 @@ function app()
         $app = new AuApplication(CONFIG_FILENAME);
     }
     return $app;
-}
-
-
-function url_for() {
-    return '/' . implode('/', func_get_args() );
-}
-
-
-function _t($word) { //I18N翻译函数
-    return $word;
 }
 
 

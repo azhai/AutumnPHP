@@ -180,15 +180,6 @@ class AuApplication
     public function run() {
         $req = cached('req', 0, new AuRequest($this));
         require_once APPLICATION_ROOT . DS . 'views' . $req->file;
-
-        /*
-        //调用函数
-        if (function_exists($req->action . 'Action')) {
-            $req->view = '';
-            return call_user_func($req->action . 'Action', $req);
-        }
-        */
-
         //调用对象方法
         $view = camelize(ltrim(substr($req->file, 0, -4), '/'));
         if (class_exists($view . 'View')) {

@@ -11,7 +11,7 @@ return array(
         'default' => array('mysql:host=localhost;dbname=db_blog', 'ryan', 'ryan', 't_'),
     ),
     'logging' => array(
-        'import' => APPLICATION_ROOT . DS . 'plugins' . DS . 'KLogger',
+        'import' => 'plugins' . DS . 'KLogger',
         'class' => 'KLogger',
         'staticmethod' => 'instance',
         'default' => array(RUNTIME_DIR . DS . 'logs'),
