@@ -16,7 +16,7 @@ class AuTemplate
     public $filename = '';
     public $tops = array();
     protected $context = array();
-    protected $headers = array(
+    protected $scripts = array(
         'css_file' => array(),  'css_inline' => array(),
         'js_file' => array(),  'js_inline' => array(),
     );
@@ -61,34 +61,34 @@ class AuTemplate
     }
 
     public function css($css, $type='file') {
-        $this->headers[ 'css_' . $type ] []= $css;
+        $this->scripts[ 'css_' . $type ] []= $css;
     }
 
     public function js($js, $type='inline') {
-        $this->headers[ 'js_' . $type ] []= $js;
+        $this->scripts[ 'js_' . $type ] []= $js;
     }
 
-    public function render_headers() {
+    public function render_scripts() {
         ob_start();
-        foreach ($this->headers['css_file'] as $css_file) {
+        foreach ($this->scripts['css_file'] as $css_file) {
             printf('<link type="text/css" rel="stylesheet" href="%s" />', $css_file);
             echo "\n";
         }
-        foreach ($this->headers['js_file'] as $js_file) {
+        foreach ($this->scripts['js_file'] as $js_file) {
             printf('<script type="text/javascript" src="%s"></script>', $js_file);
             echo "\n";
         }
-        if ( count($this->headers['css_inline']) > 0 ) {
+        if ( count($this->scripts['css_inline']) > 0 ) {
             echo '<style rel="stylesheet">';
-            foreach ($this->headers['css_inline'] as $css_inline) {
+            foreach ($this->scripts['css_inline'] as $css_inline) {
                 echo $css_inline;
                 echo "\n";
             }
             echo '</style>';
         }
-        if ( count($this->headers['js_inline']) > 0 ) {
+        if ( count($this->scripts['js_inline']) > 0 ) {
             echo '<script type="text/javascript">';
-            foreach ($this->headers['js_inline'] as $js_inline) {
+            foreach ($this->scripts['js_inline'] as $js_inline) {
                 echo $js_inline;
                 echo "\n";
             }

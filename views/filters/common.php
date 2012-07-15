@@ -43,9 +43,9 @@ class siderFilter
                 )->page(1, 10);
         $result['siders']['categories'] = $db->factory('metas')->filter_by(array('type'=>'category')
                 )->order_by('`order`')->all();
+        $year_month = "DATE_FORMAT(FROM_UNIXTIME(created), '%Y-%m')";
         $result['siders']['archives'] = $db->factory('contents')->filter_by(array('type'=>'post')
-                )->group_by("DATE_FORMAT(FROM_UNIXTIME(created), '%Y-%m')"
-                )->order_by('created DESC')->page(1, 10, false,
-                "DATE_FORMAT(FROM_UNIXTIME(created), '%Y-%m') AS `year_month`, COUNT(*) AS `count`");
+                )->group_by($year_month)->order_by('created DESC')->page(1, 10,
+                $year_month . " AS `year_month`, COUNT(*) AS `count`");
     }
 }

@@ -5,8 +5,10 @@ defined('APPLICATION_ROOT') or die();
 class Users extends AuRowObject
 {
     protected $_behaviors_ = array(
-        'blogs' => array('AuHasMany', 'contents', array('authorId', "type='post'")),
-        'pages' => array('AuHasMany', 'contents', array('authorId', "type='page'")),
+        'blogs' => array('AuHasMany', 'contents', 'authorId',
+                            array('filter'=>"type='post'")),
+        'pages' => array('AuHasMany', 'contents', 'authorId',
+                            array('filter'=>"type='page'")),
     );
 
     public static function create($row=array(), $schema=null) {
@@ -20,12 +22,14 @@ class Users extends AuRowObject
 class Contents extends AuRowObject
 {
     protected $_behaviors_ = array(
-        'author' => array('AuBelongsTo', 'users', array('authorId')),
-        'tags' => array('AuManyToMany', 'metas', array("type='tag'", 'relationships', '', 'cid', 'mid')),
+        'author' => array('AuBelongsTo', 'users', 'authorId'),
+        'tags' => array('AuManyToMany', 'metas', 'relationships',
+                            array('filter'=>"type='tag'", 'left'=>'cid', 'right'=>'mid')),
         //page 没有 category
-        'categories' => array('AuManyToMany', 'metas', array("type='category'", 'relationships', '', 'cid', 'mid')),
-        'children' => array('AuHasMany', 'contents', array('parent')),
-        'comments' => array('AuHasMany', 'comments', array('ownerId')),
+        'categories' => array('AuManyToMany', 'metas', 'relationships',
+                            array('filter'=>"type='category'", 'left'=>'cid', 'right'=>'mid')),
+        'children' => array('AuHasMany', 'contents', 'parent'),
+        'comments' => array('AuHasMany', 'comments', 'ownerId'),
     );
 
     public static function create($row=array(), $schema=null) {
@@ -74,9 +78,9 @@ class Contents extends AuRowObject
 class Comments extends AuRowObject
 {
     protected $_behaviors_ = array(
-        'author' => array('AuBelongsTo', 'users', array('authorId')),
-        'topic' => array('AuBelongsTo', 'contents', array('ownerId')),
-        'children' => array('AuHasMany', 'contents', array('parent')),
+        'author' => array('AuBelongsTo', 'users', 'authorId'),
+        'topic' => array('AuBelongsTo', 'contents', 'ownerId'),
+        'children' => array('AuHasMany', 'contents', 'parent'),
     );
 
     public static function create($row=array(), $schema=null) {
@@ -91,7 +95,8 @@ class Metas extends AuRowObject
 {
     protected $_behaviors_ = array(
         //page 没有 category
-        'contents' => array('AuManyToMany', 'contents', array('', 'relationships', '', 'mid', 'cid')),
+        'contents' => array('AuManyToMany', 'contents', 'relationships',
+                                array('left'=>'mid', 'right'=>'cid')),
     );
 }
 

@@ -11,6 +11,7 @@ class AuSchema extends AuConfigure
     public $dbname = 'default';
     public $tblname = '';
     public static $all_descs = array();
+    public static $models = array();
     public static $tables = array();
 
     public function __construct($tblname, $dbname='default')
@@ -19,6 +20,8 @@ class AuSchema extends AuConfigure
         $this->dbname = $dbname;
         if ( array_key_exists($tblname, self::$all_descs[$dbname]) ) {
             $desc = self::$all_descs[$dbname][$tblname];
+            $dbtbl = $dbname . '.' . $tblname;
+            $desc['model'] = isset( self::$models[$dbtbl] ) ? self::$models[$dbtbl] : '';
         }
         else {
             $desc = array();
@@ -44,7 +47,9 @@ class AuSchema extends AuConfigure
     {
         if ( ! array_key_exists($tblname, self::$tables) ) {
             if ( ! array_key_exists($dbname, self::$all_descs) ) {
-                self::$all_descs[$dbname] = self::describe($dbname);
+                $describe = self::describe($dbname);
+                self::$all_descs[$dbname] = $describe['desc'];
+                self::$models = array_merge(self::$models, $describe['model']);
             }
             self::$tables[$tblname] = new AuSchema($tblname, $dbname);
         }
@@ -60,26 +65,28 @@ class AuSchema extends AuConfigure
         if ( file_exists($filename) && is_file($filename) ) {
             return (include $filename);
         }
-        $desc = array();
+
+        $describe = array('model'=>array(), 'desc'=>array());
         $prefix = str_replace('_', '\_', $db->prefix);
         $strip_lenth = empty($prefix) ? 0 : strlen($prefix) - 1;
         $sql = "SHOW TABLES LIKE '" . $prefix . "%'";
         $tables = array_map('array_pop', $db->query($sql));
 
-        import('models.*');
+        import('libs.models.*');
         foreach ($tables as $table) {
             $tblname = strtolower( substr($table, $strip_lenth) );
-            $desc[$tblname] = self::parse_table($table, $db);
+            $describe['desc'][$tblname] = self::parse_table($table, $db);
             $model = camelize($tblname);
             if ( class_exists($model) && is_subclass_of($model, 'AuRowObject') ) {
-                $desc[$tblname]['model'] = $model;
+                $dbtbl = $dbname . '.' . $tblname;
+                $describe['model'][$dbtbl] = $model;
             }
         }
-        $content = "<?php \nreturn " . var_export($desc, true) . ";\n";
+        $content = "<?php \nreturn " . var_export($describe, true) . ";\n";
         touch($filename);
         chmod($filename, 0777);
         file_put_contents($filename, $content, LOCK_EX);
-        return $desc;
+        return $describe;
     }
 
     public static function parse_table($table, $db) {
@@ -108,8 +115,9 @@ class AuRowObject extends ArrayObject
     private $_state_ = '';
     protected $_schema_ = null;
     protected $_behaviors_ = array();
+    protected $_virtuals_ = array();
 
-    public function __construct($data=array(), $schema=null)
+    public function __construct(array $data=array(), $schema=null)
     {
         parent::__construct($data, parent::ARRAY_AS_PROPS);
         $this->set_schema($schema);
@@ -170,10 +178,7 @@ class AuRowObject extends ArrayObject
             return $this->{'get_' . $prop}();
         }
         else if ( array_key_exists($prop, $this->_behaviors_) ) {
-            $behavior_config = $this->_behaviors_[$prop];
-            $result = call_user_func_array(array($this, 'exec_behavior'), $behavior_config);
-            parent::offsetSet($prop, $result);
-            return $result;
+            return $this->exec_behavior($prop);
         }
     }
 
@@ -182,7 +187,9 @@ class AuRowObject extends ArrayObject
         if ( method_exists($this, 'set_' . $prop) ) {
             return $this->{'set_' . $prop}($value);
         }
-        else if ( $this->offsetExists($prop) ) {
+        else if ( $this->offsetExists($prop)
+            || array_key_exists($prop, $this->_behaviors_)
+            || array_key_exists($prop, $this->_virtuals_) ) {
             return parent::offsetSet($prop, $value);
         }
     }
@@ -219,13 +226,21 @@ class AuRowObject extends ArrayObject
         $this->_behaviors_[$name] = $behavior;
     }
 
-    public function exec_behavior($behavior, $model, $args)
+    public function get_behavior($name)
+    {
+        return isset($this->_behaviors_[$name]) ? $this->_behaviors_[$name] : array();
+    }
+
+    public function exec_behavior($prop)
     {
         $db = app()->db( $this->get_schema()->dbname );
+        @list($behavior, $model, $foreign, $extra) = $this->_behaviors_[$prop];
         $constructor = new AuConstructor($behavior);
         $constructor->append_args(array( $db->factory($model) ));
-        $constructor->append_args($args);
-        return $constructor->emit()->emit($this);
+        $constructor->append_args( array($foreign, $extra) );
+        $result = $constructor->emit()->emit($this);
+        parent::offsetSet($prop, $result);
+        return $result;
     }
 }
 
@@ -239,7 +254,7 @@ class AuRowSet extends ArrayIterator
     protected $_schema_ = null;
     protected $_rowclass_ = 'AuRowObject';
 
-    public function __construct($data=array(), $schema=null)
+    public function __construct(array $data=array(), $schema=null)
     {
         parent::__construct($data);
         $this->set_schema($schema);
@@ -273,19 +288,41 @@ class AuRowSet extends ArrayIterator
         $this->append($row);
     }
 
-    public static function id_row($row, $index, $result)
+    public static function id_row($row, $index, & $result, $pkey='id')
     {
-        $pkey = 'id';
         $result->offsetSet($row[$pkey], $row);
+    }
+
+    public static function field_row($row, $index, & $result, $field, $single=false)
+    {
+        $key = $row[$field];
+        if ( $single === false ) {
+            $result->set_rowclass('AuRowSet');
+            if ( ! $result->offsetExists($key) ) {
+                $rowset = new AuRowSet(array(), $result->get_schema());
+                $rowset->set_rowclass('AuRowObject');
+                $result->offsetSet($key, $rowset);
+            }
+            $result->offsetGet($key)->append($row);
+        }
+        else {
+            if ( ! $result->offsetExists($key) ) {
+                $result->offsetSet($key, $row);
+            }
+        }
     }
 
     public function wrap_row($row=null)
     {
         if ($row) {
-            $func = array($this->get_rowclass(), 'wrap');
-            $obj = call_user_func($func, $row, $this->get_schema());
-            return $obj;
+            $rowclass = $this->get_rowclass();
+            if ($rowclass == 'AuRowObject') {
+                $func = array($rowclass, 'wrap');
+                $obj = call_user_func($func, $row, $this->get_schema());
+                return $obj;
+            }
         }
+        return $row;
     }
 
     public function current()

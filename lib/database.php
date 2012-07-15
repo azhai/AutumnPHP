@@ -45,13 +45,13 @@ class AuDatabase
         $this->dbname = $key;
     }
 
-    public function factory($tblname, $schema=null)
+    public function factory($tblname, $schema=null, $queryclass='AuQuery')
     {
         if ( is_null($schema) ) {
             $schema = AuSchema::instance($tblname, $this->dbname);
         }
-        $query = new AuQuery($this, $schema);
-        return $query;
+        $constructor = new AuConstructor($queryclass, array($this, $schema));
+        return $constructor->emit();
     }
 
     /*连接数据库*/
@@ -64,14 +64,20 @@ class AuDatabase
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, //错误模式，默认PDO::ERRMODE_SILENT
                 PDO::ATTR_ORACLE_NULLS => PDO::NULL_TO_STRING, //将空值转为空字符串
             );
-            if ( strtolower(substr($this->dsn, 0, 6)) == 'mysql:' ) {
-                $opts[PDO::MYSQL_ATTR_USE_BUFFERED_QUERY] = true; //使用MySQL查询缓冲
-                $opts[PDO::MYSQL_ATTR_INIT_COMMAND] = "SET NAMES 'UTF8'; SET TIME_ZONE = '+8:00'";
-            }
             try {
                 $conn = new PDO($this->dsn, $this->user, $this->password, $opts);
-            } catch (PDOException $e) {
+            }
+            catch (PDOException $e) {
                 trigger_error("DB connect failed:" . $e->getMessage(), E_USER_ERROR);
+            }
+
+            if ( strtolower(substr($this->dsn, 0, 6)) == 'mysql:' ) {
+                try {
+                    $conn->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true); //使用MySQL查询缓冲
+                    $conn->exec("SET NAMES 'UTF8'; SET TIME_ZONE = '+8:00'");
+                }
+                catch (PDOException $e) {
+                }
             }
             $this->conn = $conn;
         }
@@ -158,6 +164,11 @@ class AuDatabase
         return $return ? ob_get_clean() : ob_end_flush();
     }
 
+    public function log_all()
+    {
+        app()->log( $this->dump_all(true) );
+    }
+
     public static function & get_collection($schema)
     {
         if ( ! array_key_exists($schema->dbname, self::$objects) ) {
@@ -185,7 +196,7 @@ class AuDatabase
         }
     }
 
-    public function get_or_create($tblname, $id=null)
+    public function get_or_create($tblname, $id=null, $withes=array())
     {
         $obj = null;
         if ( $id === 0 || ! empty($id) ) {
@@ -195,6 +206,9 @@ class AuDatabase
             $schema = AuSchema::instance($tblname, $this->dbname);
             $model = $schema->get_model('AuRowObject');
             $obj = call_user_func(array($model,'create'), array(), $schema);
+        }
+        foreach ($withes as $with) {
+            $obj->$with;
         }
         return $obj;
     }
@@ -259,9 +273,16 @@ class AuQuery
             return $this;
         }
         else {
-            $fields = sprintf("%s(%s)", $name, implode(", ",$args));
+            $name = strtoupper($name);
+            if ('COUNT' == $name && empty($args)) { //纠错
+                $fields = 'COUNT(*)';
+            }
+            else {
+                $fields = sprintf("%s(%s)", $name, implode(", ",$args));
+            }
             $fetch = new AuProcedure('', create_function('$stmt', 'return $stmt->fetchColumn();'));
-            return $this->select($fetch, $fields);
+            $result = $this->select($fetch, $fields);
+            return $result;
         }
     }
 
@@ -314,7 +335,7 @@ class AuQuery
         return $result;
     }
 
-    public function insert($data)
+    public function insert($data, $replace=false)
     {
         $mask = "";
         $params = array();
@@ -324,7 +345,7 @@ class AuQuery
         }
         $mask = substr($mask,-2) == ", " ? substr($mask, 0, -2) : $mask;
         $placeholder = rtrim( str_repeat( '?,', count($params) ), ',');
-        $sql = sprintf("INSERT INTO `%s` (%s) VALUES (%s)",
+        $sql = sprintf("%s INTO `%s` (%s) VALUES (%s)", $replace ? "REPLACE" : "INSERT",
                        $this->schema->table, $mask, $placeholder);
         $result = $this->db->execute(rtrim($sql), $params, true);
         return $result;
@@ -337,54 +358,63 @@ class AuQuery
         return $result;
     }
 
-    public function all($fields='*', $fetch=null, $add_row=null, $limit_params=array())
+    public function all($fields='*', $fetch=null, $limit_params=array(),
+                        $add_row=null, $add_pkey='id')
     {
         if ( is_null($fetch) ) {
             $fetch = new AuFetchAll('AuRowSet', $this->schema);
         }
         if ( ! is_null($add_row) ) {
             $fetch->add_row = $add_row;
+            $fetch->add_pkey = $add_pkey;
         }
-        return $this->select($fetch, $fields, $limit_params);
+        $result = $this->select($fetch, $fields, $limit_params);
+        $count = $result instanceof ArrayIterator ? $result->count() : count($result);
+        if ( $count > 0 && ! empty($this->withes) ) {
+            foreach ($this->withes as $with) {
+                $this->with_relation($result, $with);
+            }
+        }
+        return $result;
     }
 
-    public function page($page, $limit=10, $check=false, $fields='*', $fetch=null, $add_row=null)
+    /* 不会进行上溢出检查 */
+    public function page($page, $limit=10, $fields='*', $fetch=null,
+                        $add_row=null, $add_pkey='id')
     {
         $page = intval($page);
         if ( $page > 1 ) {
-            if ( $check ) {
-                $page = min($page, ceil($this->count('*') / $limit));
-            }
             $limit_params = array(($page - 1) * $limit, $limit);
         }
         else {
             $limit_params = array($limit);
         }
-        return $this->all($fields, $fetch, $add_row, $limit_params);
+        return $this->all($fields, $fetch, $limit_params, $add_row, $add_pkey);
     }
 
-    public function get($id=null)
+    public function get($id=null, $fields='*')
     {
         if ( ! is_null($id) ) {
-            $collection = AuDatabase::get_collection($this->schema);
-            $obj = AuDatabase::get($collection, $id);
-            if ( ! is_null($obj) ) {
-                return $obj;
+            if ( $fields == '*' ) {
+                $collection = AuDatabase::get_collection($this->schema);
+                $obj = AuDatabase::get($collection, $id);
+                if ( ! is_null($obj) ) {
+                    return $obj;
+                }
             }
-            else {
-                $pkey = $this->schema->get_pkey();
-                $this->assign_pkey($id, $pkey);
-            }
+            $pkey = $this->schema->get_pkey();
+            $this->assign_pkey($id, $pkey);
         }
         $model = $this->schema->get_model('AuRowObject');
         $fetch = new AuFetchObject($model, 'wrap', $this->schema);
-        $obj = $this->select($fetch, '*');
+        $obj = $this->select($fetch, $fields);
         return $obj;
     }
 
     public function assign($field, $value)
     {
         if ( is_array($value) ) {
+            $value = array_unique($value);
             $arrlen = count($value);
             if ( $arrlen > 1 ) {
                 $mask = rtrim( str_repeat('?,', $arrlen), ',' );
@@ -442,6 +472,11 @@ class AuQuery
 
     public function filter($condition, array $params=null)
     {
+        $condition = trim($condition);
+        if ( false !== stripos($condition, 'OR')
+            && '(' != substr($condition, 0, 1) && ')' != substr($condition, -1)) { //纠错
+            $condition = '(' . $condition . ')';
+        }
         $this->conds []= $condition;
         if (! empty($params)) {
             $this->params = array_merge($this->params, $params);
@@ -476,56 +511,33 @@ class AuQuery
         return $this;
     }
 
-    /*public function write(array $data=null, $action='UPDATE')
-     {
-        $action = strtoupper($action);
-        if ( $action == 'INSERT' || $action == 'REPLACE'  ) {
-            $fields = implode(',', array_keys($data));
-            $params = array_values($data);
-            $mask = rtrim(str_repeat('?,', count($data)), ',');
-            $sql = sprintf("%s INTO %s(%s) VALUES(%s)", $action, $table, $fields, $mask);
-            return $this->db->execute($sql, $params, true);
-        }
-        else if ( $action == 'DELETE' ) {
-            $sql = $this->sql("DELETE FROM %s", true);
-            return $this->db->execute($sql, $this->params);
-        }
-        else {
-            $mask = array();
-            $params = array();
-            foreach ($data as $key => $val) {
-                $mask []= $key . "=?";
-                $params []= $val;
-            }
-            $sql = $this->sql("UPDATE %s SET " . implode(", ", $mask), true);
-            $params = array_merge($params, $this->params);
-            return $this->db->execute($sql, $params);
-        }
-    }
-
-    public function relate_query($type, $value, $relation=array(), $method='all')
+    public function with_relation(& $primary, $prop)
     {
-        $model = $this->model;
-        $field = $model::$pkeys[0];
-        if ( array_key_exists('extra', $relation) ) {
-            call_user_func_array(array($this, 'filter'), $relation['extra']);
+        $pri = $primary[0];
+        @list($behavior, $model, $foreign, $extra) = $pri->get_behavior($prop);
+        $constructor = new AuConstructor($behavior);
+        $constructor->append_args(array( $this->db->factory($model) ));
+        $constructor->append_args( array($foreign, $extra) );
+        $result = $constructor->emit()->emit($primary);
+
+        if ($behavior == 'AuBelongsTo') {
+            foreach ($primary as $i => $pri) {
+                $fval = $pri->$foreign;
+                $pri->offsetSet($prop, $result[$fval]);
+                $primary->offsetSet($i, $pri);
+            }
         }
-        switch ($type) {
-            case 'has_one':
-            case 'has_many':
-                $field = $relation['field'];
-                break;
-            case 'many_many':
-                $query = DbFactory::init($relation['middle'], $this->db);
-                if ( array_key_exists('mid_extra', $relation) ) {
-                    $query = call_user_func_array(array($query, 'filter'), $relation['mid_extra']);
+        else if ($behavior == 'AuHasOne' || $behavior == 'AuHasMany') {
+            $pkey = $this->schema->get_pkey();
+            foreach ($primary as $i => $pri) {
+                $rel_result = $result[ $pri->$pkey ];
+                if ($behavior == 'AuHasMany') {
+                    $rel_result = $rel_result ? $rel_result : array();
                 }
-                $rkey = isset($relation['rkey']) ? $relation['rkey'] : strtolower(get_class($this->model)) . '_id';
-                $value = $query->filter_by($value)->select($rkey);
-                break;
-            case 'belongs_to':
-                break;
+                $pri->offsetSet($prop, $rel_result);
+                $primary->offsetSet($i, $pri);
+            }
         }
-        return $this->filter_by(array($field=>$value))->$method();
-    }*/
+        return $primary;
+    }
 }
