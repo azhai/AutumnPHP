@@ -1,0 +1,194 @@
+@charset "utf-8";
+body {
+	-webkit-animation-name: bg;
+	-moz-animation-name: bg;
+	-webkit-animation-duration: 15s;
+	-moz-animation-duration: 15s;
+	-webkit-animation-iteration-count: 1;
+	-moz-animation-iteration-count: 1;
+	-webkit-animation-timing-function: ease-in-out;
+	-moz-animation-timing-function: ease-in-out;
+}
+#logo h1 {
+	-webkit-animation-duration: 1s;
+	-webkit-animation-delay: .7s;
+	-webkit-animation-timing-function: ease;
+	-webkit-animation-fill-mode: both;
+	-webkit-animation-name: rotateInDownLeft;
+	-moz-animation-duration: 1s;
+	-moz-animation-delay: .7s;
+	-moz-animation-timing-function: ease;
+	-moz-animation-fill-mode: both;
+	-moz-animation-name: rotateInDownLeft;
+	animation-duration: 1s;
+	animation-delay: .7s;
+	animation-timing-function: ease;
+	animation-fill-mode: both;
+	animation-name: rotateInDownLeft;
+}
+nav li {
+	-webkit-animation-duration: .75s;
+	-webkit-animation-delay: .5s;
+	-webkit-animation-timing-function: ease;
+	-webkit-animation-fill-mode: both;
+	-webkit-animation-name: bounceInLeft;
+	-moz-animation-duration: .75s;
+	-moz-animation-delay: .5s;
+	-moz-animation-timing-function: ease;
+	-moz-animation-fill-mode: both;
+	-moz-animation-name: bounceInLeft;
+	animation-duration: .75s;
+	animation-delay: .5s;
+	animation-timing-function: ease;
+	animation-fill-mode: both;
+	animation-name: bounceInLeft;
+}
+#html5 {
+	-webkit-animation-duration: .75s;
+	-webkit-animation-delay: .5s;
+	-webkit-animation-timing-function: ease;
+	-webkit-animation-fill-mode: both;
+	-webkit-animation-name: bounceIn;
+	-moz-animation-duration: .75s;
+	-moz-animation-delay: .5s;
+	-moz-animation-timing-function: ease;
+	-moz-animation-fill-mode: both;
+	-moz-animation-name: bounceInRight;
+	animation-duration: .75s;
+	animation-delay: .5s;
+	animation-timing-function: ease;
+	animation-fill-mode: both;
+	animation-name: bounceInRight;
+
+}
+.action-1 {
+	-moz-transition: all 0.2s ease-in-out;
+	-webkit-transition: all 0.2s ease-in-out;
+	-o-transition: all 0.2s ease-in-out;
+	-ms-transition: all 0.2s ease-in-out;
+	transition: all 0.2s ease-in-out;
+}
+.action-1:hover {
+	-moz-transition: all 0.5s ease-in-out;
+	-webkit-transition: all 0.5s ease-in-out;
+	-o-transition: all 0.5s ease-in-out;
+	-ms-transition: all 0.5s ease-in-out;
+	transition: all 0.5s ease-in-out;
+	-moz-transform: rotate(-1440deg);
+	-webkit-transform: rotate(-1440deg);
+	-o-transform: rotate(-1440deg);
+	-ms-transform: rotate(-1440deg);
+	transform: rotate(-1440deg);
+}
+
+nav a:hover {
+	-moz-transition: all 0.5s ease-in-out;
+	-webkit-transition: all 0.5s ease-in-out;
+	-o-transition: all 0.5s ease-in-out;
+	-ms-transition: all 0.5s ease-in-out;
+	transition: all 0.5s ease-in-out;
+	-moz-transform: rotate(720deg);
+	-webkit-transform: rotate(720deg);
+	-o-transform: rotate(720deg);
+	-ms-transform: rotate(720deg);
+	transform: rotate(720deg);
+}
+#content {
+	-webkit-animation-duration: .75s;
+	-webkit-animation-delay: .5s;
+	-webkit-animation-timing-function: ease;
+	-webkit-animation-fill-mode: both;
+	-webkit-animation-name: bounceInUp;
+	-moz-animation-duration: .75s;
+	-moz-animation-delay: .5s;
+	-moz-animation-timing-function: ease;
+	-moz-animation-fill-mode: both;
+	-moz-animation-name: bounceInUp;
+	animation-duration: .75s;
+	animation-delay: .5s;
+	animation-timing-function: ease;
+	animation-fill-mode: both;
+	animation-name: bounceInUp;
+}
+.action-left {
+	-webkit-transition-property: color, background-color, padding-left;
+	-moz-transition-property: color, background-color, padding-left;
+	-webkit-transition-duration: 500ms, 500ms, 500ms;
+	-moz-transition-duration: 500ms, 500ms, 500ms;
+}
+.action-left:hover {
+	padding-left: 30px
+}
+.post img:hover{
+	-webkit-animation-duration: .8s;
+	-webkit-animation-delay: .5s;
+	-webkit-animation-timing-function: ease;
+	-webkit-animation-fill-mode: both;
+	-webkit-animation-name: flip;
+	-moz-animation-duration: .75s;
+	-moz-animation-delay: .5s;
+	-moz-animation-timing-function: ease;
+	-moz-animation-fill-mode: both;
+	-moz-animation-name: flip;
+	animation-duration: .75s;
+	animation-delay: .5s;
+	animation-timing-function: ease;
+	animation-fill-mode: both;
+	animation-name: flip;
+}
+
+.sidebar-left:hover {
+	-webkit-animation-duration: .8s;
+	-webkit-animation-delay: .1s;
+	-webkit-animation-timing-function: ease;
+	-webkit-animation-fill-mode: both;
+	-webkit-animation-name: shake;
+	-moz-animation-duration: .75s;
+	-moz-animation-delay: .5s;
+	-moz-animation-timing-function: ease;
+	-moz-animation-fill-mode: both;
+	-moz-animation-name: shake;
+	animation-duration: .75s;
+	animation-delay: .5s;
+	animation-timing-function: ease;
+	animation-fill-mode: both;
+	animation-name: shake;
+}
+.widget {
+	-webkit-animation-duration: .75s;
+	-webkit-animation-delay: .5s;
+	-webkit-animation-timing-function: ease;
+	-webkit-animation-fill-mode: both;
+	-webkit-animation-name: bounceInRight;
+	-moz-animation-duration: .75s;
+	-moz-animation-delay: .5s;
+	-moz-animation-timing-function: ease;
+	-moz-animation-fill-mode: both;
+	-moz-animation-name: bounceInRight;
+	animation-duration: .75s;
+	animation-delay: .5s;
+	animation-timing-function: ease;
+	animation-fill-mode: both;
+	animation-name: bounceInRight;
+
+}
+/*----------
+page-a
+------------*/
+
+@-webkit-keyframes bg {
+ from {
+ background-position:100% 100%;
+}
+to {
+	background-position: 0 0;
+}
+}
+@-moz-keyframes bg {
+ from {
+ background-position:100% 100%;
+}
+to {
+	background-position: 0 0;
+}
+}
