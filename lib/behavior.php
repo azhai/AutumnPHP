@@ -79,9 +79,12 @@ class AuBehavior extends AuProcedure
         else {
             $this->primary = $primary;
         }
+        $schema = $this->primary->get_schema();
+        $this->retrieve_foreign($schema);
         if ( ! empty($this->extra['filter']) ) {
             $this->procs []= new AuProcedure(null, 'filter', array($this->extra['filter']));
         }
+        return $schema;
     }
 
     public function retrieve_foreign($schema)
@@ -96,9 +99,7 @@ class AuBehavior extends AuProcedure
 
     public function emit($primary)
     {
-        $this->init_procs($primary);
-        $schema = $this->primary->get_schema();
-        $this->retrieve_foreign($schema);
+        $schema = $this->init_procs($primary);
         $subject = app()->db( $schema->dbname )->factory($this->subject);
         foreach ($this->procs as $proc) {
             $proc->subject = $subject;
@@ -121,7 +122,7 @@ class AuBelongsTo extends AuBehavior
     public $method = 'get';
 
     public function init_procs($primary) {
-        parent::init_procs($primary);
+        $schema = parent::init_procs($primary);
         if ( ! empty($this->primary_set) ) {
             $this->method = 'all';
             $vals = array();
@@ -135,6 +136,7 @@ class AuBelongsTo extends AuBehavior
         else {
             $this->args = array($primary->{$this->foreign}, $this->foreign_fields);
         }
+        return $schema;
     }
 }
 
@@ -144,7 +146,7 @@ class AuHasOne extends AuBehavior
     public $method = 'get';
 
     public function init_procs($primary) {
-        parent::init_procs($primary);
+        $schema = parent::init_procs($primary);
         $pkey = $this->primary->get_schema()->get_pkey();
         if ( ! empty($this->primary_set) ) {
             $this->method = 'all';
@@ -165,6 +167,7 @@ class AuHasOne extends AuBehavior
         $this->procs []= new AuProcedure(null, 'filter_by', array( 
             array($this->foreign => $vals) )
         );
+        return $schema;
     }
 }
 
@@ -193,7 +196,7 @@ class AuManyToMany extends AuBehavior
     }
 
     public function init_procs($primary) {
-        parent::init_procs($primary);
+        $schema = parent::init_procs($primary);
         $extra = array();
         if ( ! empty($this->extra['midfilter']) ) {
             $extra['filter'] = $this->extra['midfilter'];
@@ -206,6 +209,7 @@ class AuManyToMany extends AuBehavior
         $this->procs []= new AuProcedure(null, 'assign_query', array( 
             null, $query, $this->extra['right']
         ));
+        return $schema;
     }
 }
 

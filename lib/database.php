@@ -411,7 +411,11 @@ class AuQuery
         return $obj;
     }
 
-    public function assign($field, $value)
+    public function assign($field, $value) {
+        $this->assign_field($field, $value);
+        return $this;
+    }
+    public function assign_field($field, $value)
     {
         if ( is_array($value) ) {
             $value = array_unique($value);
