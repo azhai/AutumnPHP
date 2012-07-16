@@ -4,6 +4,7 @@ defined('AUTUMN_ODU4MTE3NTYX') or die();
 return array(
     'basic' => array(
         'debug' => true,
+        'theme' => 'ymmind',
         'site_title' => 'Autumn PHP blog example',
     ),
     'db' => array(

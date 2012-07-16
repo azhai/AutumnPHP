@@ -265,27 +265,6 @@ class AuQuery
         $this->schema = $schema;
     }
 
-    public function __call($name, $args)
-    {
-        $scopes = array();
-        if (! empty($scopes) && array_key_exists($name, $scopes)) {
-            $this->filter($scopes[$name], $args);
-            return $this;
-        }
-        else {
-            $name = strtoupper($name);
-            if ('COUNT' == $name && empty($args)) { //纠错
-                $fields = 'COUNT(*)';
-            }
-            else {
-                $fields = sprintf("%s(%s)", $name, implode(", ",$args));
-            }
-            $fetch = new AuProcedure('', create_function('$stmt', 'return $stmt->fetchColumn();'));
-            $result = $this->select($fetch, $fields);
-            return $result;
-        }
-    }
-
     public function where()
     {
         if (! empty($this->conds) ) {
@@ -307,17 +286,6 @@ class AuQuery
             $sql .= " ORDER BY " . implode(", ", $this->orders);
         }
         return ltrim($sql);
-    }
-
-    public function select($fetch=null, $fields='*', $limit=array())
-    {
-        $sql = sprintf("SELECT %s FROM `%s` %s %s", $fields,
-                       $this->schema->table, $this->where(), $this->extra());
-        if ( ! empty($limit) ) {
-            $sql = rtrim($sql) . " LIMIT " . implode(",", $limit);
-        }
-        $result = $this->db->query(rtrim($sql), $this->params, $fetch);
-        return $result;
     }
 
     public function update($data)
@@ -358,7 +326,18 @@ class AuQuery
         return $result;
     }
 
-    public function all($fields='*', $fetch=null, $limit_params=array(),
+    public function select($fields='*', $limit=array(), $fetch=null)
+    {
+        $sql = sprintf("SELECT %s FROM `%s` %s %s", $fields,
+                       $this->schema->table, $this->where(), $this->extra());
+        if ( ! empty($limit) ) {
+            $sql = rtrim($sql) . " LIMIT " . implode(",", $limit);
+        }
+        $result = $this->db->query(rtrim($sql), $this->params, $fetch);
+        return $result;
+    }
+
+    public function all($fields='*', $limit_params=array(), $fetch=null,
                         $add_row=null, $add_pkey='id')
     {
         if ( is_null($fetch) ) {
@@ -368,7 +347,7 @@ class AuQuery
             $fetch->add_row = $add_row;
             $fetch->add_pkey = $add_pkey;
         }
-        $result = $this->select($fetch, $fields, $limit_params);
+        $result = $this->select($fields, $limit_params, $fetch);
         $count = $result instanceof ArrayIterator ? $result->count() : count($result);
         if ( $count > 0 && ! empty($this->withes) ) {
             foreach ($this->withes as $with) {
@@ -389,10 +368,10 @@ class AuQuery
         else {
             $limit_params = array($limit);
         }
-        return $this->all($fields, $fetch, $limit_params, $add_row, $add_pkey);
+        return $this->all($fields, $limit_params, $fetch, $add_row, $add_pkey);
     }
 
-    public function get($id=null, $fields='*')
+    public function get($id=null, $fields='*', $fetch=null)
     {
         if ( ! is_null($id) ) {
             if ( $fields == '*' ) {
@@ -407,8 +386,29 @@ class AuQuery
         }
         $model = $this->schema->get_model('AuRowObject');
         $fetch = new AuFetchObject($model, 'wrap', $this->schema);
-        $obj = $this->select($fetch, $fields);
+        $obj = $this->select($fields, array(), $fetch);
         return $obj;
+    }
+
+    public function __call($name, $args)
+    {
+        $scopes = app()->get_scopes();
+        if (! empty($scopes) && array_key_exists($name, $scopes)) {
+            $this->filter($scopes[$name], $args);
+            return $this;
+        }
+        else {
+            $name = strtoupper($name);
+            if ('COUNT' == $name && empty($args)) { //纠错
+                $fields = 'COUNT(*)';
+            }
+            else {
+                $fields = sprintf("%s(%s)", $name, implode(", ",$args));
+            }
+            $fetch = new AuProcedure('', create_function('$stmt', 'return $stmt->fetchColumn();'));
+            $result = $this->select($fields, array(), $fetch);
+            return $result;
+        }
     }
 
     public function assign($field, $value) {

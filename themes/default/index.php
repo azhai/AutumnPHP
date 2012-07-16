@@ -1,6 +1,6 @@
 <?php
 $this->extend('layout.php');
-$this->css('/media/css/960.gs.css', 'file');
+//$this->css('/media/css/960.gs.css', 'file');
 
 function block_list_content($this, $entries, $paginate) {
 ?>
@@ -18,7 +18,8 @@ function block_list_content($this, $entries, $paginate) {
     </div>
     <?php endforeach;
 
-    echo $paginate ?>
+    if ( function_exists('block_paginate') ) { block_paginate($this, $paginate); }
+    ?>
 </div><!-- end #content-->
 <?php
 }
@@ -26,7 +27,7 @@ function block_list_content($this, $entries, $paginate) {
 function block_paginate($this, $paginate) { ?>
     <ol class="page-navigator">
         <li class="current">
-            <a href="/page/1/">1</a>
+            <a href="/home/page/1/">1</a>
         </li>
     </ol>
 <?php } ?>

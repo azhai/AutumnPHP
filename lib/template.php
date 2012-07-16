@@ -1,6 +1,5 @@
 <?php
 defined('APPLICATION_ROOT') or die();
-defined('TEMPLATE_DIR') or define('TEMPLATE_DIR', APPLICATION_ROOT . DS . 'templates');
 
 
 function _t($word) { //I18N翻译函数
@@ -13,6 +12,7 @@ function _t($word) { //I18N翻译函数
  */
 class AuTemplate
 {
+    public $theme = 'default';
     public $filename = '';
     public $tops = array();
     protected $context = array();
@@ -21,13 +21,21 @@ class AuTemplate
         'js_file' => array(),  'js_inline' => array(),
     );
 
-    public function __construct($filename) {
-        $this->filename = TEMPLATE_DIR . DS . $filename;
+    public function __construct($filename='') {
+        if ( ! empty($filename) ) {
+            $this->extend($filename);
+        }
     }
 
     public function extend($filename) { //模板继承
-        $filename = TEMPLATE_DIR . DS . $filename;
-        if (! in_array($filename, $this->tops) && file_exists($filename)) {
+        $theme_dir = APPLICATION_ROOT . DS . 'themes';
+        if ( file_exists($theme_dir . DS . $this->theme . DS . $filename) ) {
+            $filename = $theme_dir . DS . $this->theme . DS . $filename;
+        }
+        else {
+            $filename = $theme_dir . DS . 'default' . DS . $filename;
+        }
+        if (! in_array($filename, $this->tops)) {
             $this->filename = $filename;
         }
     }

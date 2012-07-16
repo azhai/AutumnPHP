@@ -108,7 +108,7 @@ class Options extends AuRowObject
     public static function instance($user=0) {
         if ( ! array_key_exists($user, self::$_instances_) ) {
             $query = app()->db()->factory('options');
-            $rows = $query->filter_by( array('user'=>$user) )->select(null, 'name, value');
+            $rows = $query->filter_by( array('user'=>$user) )->select('name, value');
             $data = array();
             foreach ($rows as $row) {
                 $data[ $row['name'] ] = $row['value'];

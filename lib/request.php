@@ -1,6 +1,5 @@
 <?php
 defined('APPLICATION_ROOT') or die();
-defined('VIEW_DIR') or define('VIEW_DIR', APPLICATION_ROOT . DS . 'views');
 
 
 function url_for() {
@@ -44,12 +43,13 @@ class AuRequest
             array_pop($pics);
         }
 
+        $view_dir = APPLICATION_ROOT . DS . 'views';
         $limit = count($pics) - 1;
         while ($limit >= 0) {
             $pos = $pics[$limit][1] + strlen($pics[$limit][0]);
             $dir = substr($this->url, 0, $pos);
-            if (file_exists(VIEW_DIR . $dir . DS)) { //目录存在
-                if (file_exists(VIEW_DIR . $dir . $this->file)) {
+            if (file_exists($view_dir . $dir . DS)) { //目录存在
+                if (file_exists($view_dir . $dir . $this->file)) {
                     $this->file = $dir . $this->file;
                     $this->args = explode('/', substr($this->url, $pos + 1));
                     if (! empty($this->args) && $this->args != array('')) {
@@ -58,7 +58,7 @@ class AuRequest
                     return true;
                 }
             }
-            else if (file_exists(VIEW_DIR . $dir . '.php')) { //文件存在
+            else if (file_exists($view_dir . $dir . '.php')) { //文件存在
                 $this->file = $dir . '.php';
                 $this->args = explode('/', substr($this->url, $pos + 1));
                 if (! empty($this->args) && $this->args != array('')) {
@@ -68,7 +68,7 @@ class AuRequest
             }
             $limit --;
         }
-        if (file_exists(VIEW_DIR . $this->file)) {
+        if (file_exists($view_dir . $this->file)) {
             return true; //默认文件/index.php存在
         }
     }
@@ -93,7 +93,7 @@ class AuRequest
     }
 
     public function error($code=404) {
-        $t = new AuTemplate( sprintf('errors/%d.php', $code) );
+        $t = new AuTemplate( 'errors' . DS . sprintf('%d.php', $code) );
         $t->render();
         exit;
     }

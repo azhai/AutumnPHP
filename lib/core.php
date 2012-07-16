@@ -135,6 +135,11 @@ class AuApplication
         }
     }
 
+    public function get_scopes()
+    {
+        return isset($this->configs->scopes) ? $this->configs->scopes : array();
+    }
+
     public function log($var='', $level=null)
     {
         $logger = $this->logging(); #先将KLogger类载入

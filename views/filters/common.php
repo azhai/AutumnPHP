@@ -4,12 +4,17 @@ defined('APPLICATION_ROOT') or die();
 class optionFilter
 {
     protected $view = null;
+    protected $template = null;
 
     public function __construct($view) {
         $this->view = $view;
+        $this->template = new AuTemplate();
     }
 
     public function before($req) {
+        if ( isset($req->app->theme) ) {
+            $this->template->theme = $req->app->theme;
+        }
         $user = $req->app->db()->factory('users')->get(1);
         $this->view->user = cached('user', 0, $user);
         return true;
@@ -17,8 +22,8 @@ class optionFilter
 
     public function after($result) {
         $result['options'] = Options::instance();
-        $t = new AuTemplate( $result['template_name'] );
-        $t->render($result);
+        $this->template->extend( $result['template_name'] );
+        $this->template->render($result);
     }
 }
 

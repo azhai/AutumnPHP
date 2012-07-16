@@ -131,7 +131,7 @@ class AuBelongsTo extends AuBehavior
             }
             $this->procs []= new AuProcedure(null, 'assign_pkey', array($vals));
             $add_row = array('AuRowSet', 'id_row');
-            $this->args = array($this->foreign_fields, null, array(), $add_row);
+            $this->args = array($this->foreign_fields, array(), null, $add_row);
         }
         else {
             $this->args = array($primary->{$this->foreign}, $this->foreign_fields);
@@ -156,7 +156,7 @@ class AuHasOne extends AuBehavior
             }
             $single = 'AuHasOne' == get_class($this);
             $add_row = array('AuRowSet', 'field_row');
-            $this->args = array($this->foreign_fields, null, array(), 
+            $this->args = array($this->foreign_fields, array(), null, 
                                 $add_row, $this->foreign, $single);
         }
         else {
