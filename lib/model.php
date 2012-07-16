@@ -233,11 +233,10 @@ class AuRowObject extends ArrayObject
 
     public function exec_behavior($prop)
     {
-        $db = app()->db( $this->get_schema()->dbname );
         @list($behavior, $model, $foreign, $extra) = $this->_behaviors_[$prop];
-        $constructor = new AuConstructor($behavior);
-        $constructor->append_args(array( $db->factory($model) ));
-        $constructor->append_args( array($foreign, $extra) );
+        $constructor = new AuConstructor($behavior, array( 
+            $model, $foreign, $extra
+        ));
         $result = $constructor->emit()->emit($this);
         parent::offsetSet($prop, $result);
         return $result;

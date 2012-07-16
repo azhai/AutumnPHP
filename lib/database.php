@@ -454,6 +454,7 @@ class AuQuery
 
     public function assign_query($field, $query, $qfield='')
     {
+        $field = empty($field) ? $this->schema->get_pkey() : $field;
         $qfield = empty($qfield) ? $field : $qfield;
         $sql = sprintf("SELECT %s FROM `%s` %s %s", $qfield,
                        $query->schema->table, $query->where(), $query->extra());
@@ -515,9 +516,9 @@ class AuQuery
     {
         $pri = $primary[0];
         @list($behavior, $model, $foreign, $extra) = $pri->get_behavior($prop);
-        $constructor = new AuConstructor($behavior);
-        $constructor->append_args(array( $this->db->factory($model) ));
-        $constructor->append_args( array($foreign, $extra) );
+        $constructor = new AuConstructor($behavior, array( 
+            $model, $foreign, $extra
+        ));
         $result = $constructor->emit()->emit($primary);
 
         if ($behavior == 'AuBelongsTo') {

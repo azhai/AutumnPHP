@@ -54,9 +54,11 @@ class AuFetchAll extends AuConstructor
 
 class AuBehavior extends AuProcedure
 {
-    public $steps = array();
-    public $db = null;
+    public $procs = array();
+    public $primary = null;
+    public $primary_set = array();
     public $foreign = '';
+    public $foreign_fields = '*';
     public $extra = array();
 
     public function __construct($subject, $foreign=null, array $extra=null)
@@ -68,25 +70,48 @@ class AuBehavior extends AuProcedure
         }
     }
 
-    public function fill_step_args($primary)
+    public function init_procs($primary)
     {
+        if ( is_array($primary) || $primary instanceof ArrayIterator ) {
+            $this->primary_set = $primary;
+            $this->primary = $primary[0];
+        }
+        else {
+            $this->primary = $primary;
+        }
+        if ( ! empty($this->extra['filter']) ) {
+            $this->procs []= new AuProcedure(null, 'filter', array($this->extra['filter']));
+        }
+    }
+
+    public function retrieve_foreign($schema)
+    {
+        if ( empty($this->foreign) ) {
+            $this->foreign = $schema->tblname . '_id';
+        }
+        if ( isset($this->extra['foreign_fields']) ) {
+            $this->foreign_fields = $this->extra['foreign_fields'];
+        }
     }
 
     public function emit($primary)
     {
-        $subject = $this->subject;
-        if ( ! empty($this->extra['filter']) ) {
-            $subject->filter( $this->extra['filter'] );
+        $this->init_procs($primary);
+        $schema = $this->primary->get_schema();
+        $this->retrieve_foreign($schema);
+        $subject = app()->db( $schema->dbname )->factory($this->subject);
+        foreach ($this->procs as $proc) {
+            $proc->subject = $subject;
+            $subject = $proc->emit();
         }
-        $this->fill_step_args($primary);
-        foreach ($this->steps as $i => $method) {
-            $args = isset($this->args[$i]) ? $this->args[$i] : array();
-            $subject = call_user_func_array(array($subject, $method), $args);
+        //
+        if ( ! empty($this->method) ) {
+            $this->subject = $subject;
+            return parent::emit();
         }
-        $steplen = count($this->steps);
-        $args = isset($this->args[$steplen]) ? $this->args[$steplen] : array();
-        $result = call_user_func_array(array($subject, $this->method), $args);
-        return $result;
+        else {
+            return $subject;
+        }
     }
 }
 
@@ -94,33 +119,21 @@ class AuBehavior extends AuProcedure
 class AuBelongsTo extends AuBehavior
 {
     public $method = 'get';
-    public $steps = array();
 
-    public function fill_step_args($primary)
-    {
-        if ( empty($this->foreign) ) {
-            $this->foreign = $this->subject->get_schema()->tblname . '_id';
-        }
-        $fields = isset($this->extra['foreign_fields']) ? $this->extra['foreign_fields'] : '*';
-        if ( is_array($primary) || $primary instanceof ArrayIterator ) {
+    public function init_procs($primary) {
+        parent::init_procs($primary);
+        if ( ! empty($this->primary_set) ) {
             $this->method = 'all';
-            $this->steps = array('assign_pkey');
-            $pkey = $primary[0]->get_schema()->get_pkey();
             $vals = array();
-            foreach ($primary as $pri) {
-                $vals []= $pri->{$this->foreign};
+            foreach ($this->primary_set as $primary) {
+                $vals []= $primary->{$this->foreign};
             }
-
+            $this->procs []= new AuProcedure(null, 'assign_pkey', array($vals));
             $add_row = array('AuRowSet', 'id_row');
-            $this->args = array(
-                array($vals),
-                array($fields, null, array(), $add_row),
-            );
+            $this->args = array($this->foreign_fields, null, array(), $add_row);
         }
         else {
-            $this->args = array(
-                array($primary->{$this->foreign}, $fields),
-            );
+            $this->args = array($primary->{$this->foreign}, $this->foreign_fields);
         }
     }
 }
@@ -129,39 +142,28 @@ class AuBelongsTo extends AuBehavior
 class AuHasOne extends AuBehavior
 {
     public $method = 'get';
-    public $steps = array('filter_by');
 
-    public function fill_step_args($primary)
-    {
-        $fields = isset($this->extra['foreign_fields']) ? $this->extra['foreign_fields'] : '*';
-        if ( is_array($primary) || $primary instanceof ArrayIterator ) {
+    public function init_procs($primary) {
+        parent::init_procs($primary);
+        $pkey = $this->primary->get_schema()->get_pkey();
+        if ( ! empty($this->primary_set) ) {
             $this->method = 'all';
-            $schema = $primary[0]->get_schema();
-            $pkey = $schema->get_pkey();
             $vals = array();
-            foreach ($primary as $pri) {
-                $vals []= $pri->$pkey;
-            }
-
-            $add_row = array('AuRowSet', 'field_row');
-            if ( empty($this->foreign) ) {
-                $this->foreign = $schema->tblname . '_id';
+            foreach ($this->primary_set as $primary) {
+                $vals []= $primary->$pkey;
             }
             $single = 'AuHasOne' == get_class($this);
-            $args = array($fields, null, array(), $add_row, $this->foreign, $single);
+            $add_row = array('AuRowSet', 'field_row');
+            $this->args = array($this->foreign_fields, null, array(), 
+                                $add_row, $this->foreign, $single);
         }
         else {
-            $schema = $primary->get_schema();
-            $pkey = $schema->get_pkey();
-            $vals = $primary->$pkey;
-            if ( empty($this->foreign) ) {
-                $this->foreign = $schema->tblname . '_id';
-            }
-            $args = $this->method == 'all' ? array($fields) : array(null, $fields);
+            $vals = $this->primary->$pkey;
+            $this->args = $this->method == 'all' ? array($this->foreign_fields) : 
+                                                array(null, $this->foreign_fields);
         }
-        $this->args = array(
-            array( array($this->foreign => $vals) ),
-            $args,
+        $this->procs []= new AuProcedure(null, 'filter_by', array( 
+            array($this->foreign => $vals) )
         );
     }
 }
@@ -176,38 +178,34 @@ class AuHasMany extends AuHasOne
 class AuManyToMany extends AuBehavior
 {
     public $method = 'all';
-    public $steps = array('assign_query');
     public $foreign = '';
     public $extra = array(
         'filter'=>'', 'midfilter'=>'', 'left'=>'', 'right'=>''
     );
 
-    public function fill_step_args($primary)
+    public function retrieve_foreign($schema)
     {
-        $fields = isset($this->extra['foreign_fields']) ? $this->extra['foreign_fields'] : '*';
-        if ( is_array($primary) || $primary instanceof ArrayIterator ) {
-            $primary = $primary[0];
-        }
-        $subject = $this->subject;
-        $pkey = $primary->get_schema()->get_pkey();
-        $subpkey = $subject->schema->get_pkey();
         if ( empty($this->foreign) ) {
-            $tblnames = array(
-                $primary->get_schema()->tblname,
-                $subject->get_schema()->tblname,
-            );
+            $tblnames = array($schema->tblname, $this->subject);
             sort($tblnames);
             $this->foreign = implode('_', $tblnames);
         }
-        $middle = $subject->db->factory( $this->foreign );
+    }
+
+    public function init_procs($primary) {
+        parent::init_procs($primary);
+        $extra = array();
         if ( ! empty($this->extra['midfilter']) ) {
-            $middle->filter( $this->extra['midfilter'] );
+            $extra['filter'] = $this->extra['midfilter'];
         }
-        $query = $middle->filter_by( array($this->extra['left'] => $primary->$pkey) );
-        $this->args = array(
-            array($subpkey, $query, $this->extra['right']),
-            array($fields),
-        );
+        $query = new AuHasMany($this->foreign, $this->extra['left'], $extra);
+        $query->method = null;
+        $query = $query->emit($primary);
+
+        $this->args = array($this->foreign_fields);
+        $this->procs []= new AuProcedure(null, 'assign_query', array( 
+            null, $query, $this->extra['right']
+        ));
     }
 }
 
