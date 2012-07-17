@@ -14,6 +14,7 @@ function autoload($klass)
         'AuApplication' => 'core.php',
         'AuBehavior' => 'behavior.php',
         'AuBelongsTo' => 'behavior.php',
+        'AuCache' => 'cache.php',
         'AuConfigure' => 'core.php',
         'AuConnection' => 'database.php',
         'AuConstructor' => 'core.php',

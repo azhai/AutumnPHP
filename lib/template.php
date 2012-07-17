@@ -69,11 +69,17 @@ class AuTemplate
     }
 
     public function css($css, $type='file') {
-        $this->scripts[ 'css_' . $type ] []= $css;
+        //相同css文件不重复载入
+        if ('inline' == $type || ! in_array($css, $this->scripts['css_file'])) {
+            $this->scripts[ 'css_' . $type ] []= $css;
+        }
     }
 
     public function js($js, $type='inline') {
-        $this->scripts[ 'js_' . $type ] []= $js;
+        //同上
+        if ('inline' == $type || ! in_array($js, $this->scripts['js_file'])) {
+            $this->scripts[ 'js_' . $type ] []= $js;
+        }
     }
 
     public function render_scripts() {

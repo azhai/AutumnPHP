@@ -58,34 +58,30 @@ class AuSchema extends AuConfigure
 
     public static function describe($dbname, $db=null)
     {
-        if ( is_null($db) ) {
-            $db = app()->db($dbname);
-        }
-        $filename = RUNTIME_DIR . DS . 'schemas' . DS . $dbname . '.php';
-        if ( file_exists($filename) && is_file($filename) ) {
-            return (include $filename);
-        }
-
-        $describe = array('model'=>array(), 'desc'=>array());
-        $prefix = str_replace('_', '\_', $db->prefix);
-        $strip_lenth = empty($prefix) ? 0 : strlen($prefix) - 1;
-        $sql = "SHOW TABLES LIKE '" . $prefix . "%'";
-        $tables = array_map('array_pop', $db->query($sql));
-
-        import('libs.models.*');
-        foreach ($tables as $table) {
-            $tblname = strtolower( substr($table, $strip_lenth) );
-            $describe['desc'][$tblname] = self::parse_table($table, $db);
-            $model = camelize($tblname);
-            if ( class_exists($model) && is_subclass_of($model, 'AuRowObject') ) {
-                $dbtbl = $dbname . '.' . $tblname;
-                $describe['model'][$dbtbl] = $model;
+        $cache = app()->cache()->file;
+        $describe = $cache->get('schema', $dbname);
+        if ( is_null($describe) ) {
+            if ( is_null($db) ) {
+                $db = app()->db($dbname);
             }
+            $describe = array('model'=>array(), 'desc'=>array());
+            $prefix = str_replace('_', '\_', $db->prefix);
+            $strip_lenth = empty($prefix) ? 0 : strlen($prefix) - 1;
+            $sql = "SHOW TABLES LIKE '" . $prefix . "%'";
+            $tables = array_map('array_pop', $db->query($sql));
+
+            import('libs.models.*');
+            foreach ($tables as $table) {
+                $tblname = strtolower( substr($table, $strip_lenth) );
+                $describe['desc'][$tblname] = self::parse_table($table, $db);
+                $model = camelize($tblname);
+                if ( class_exists($model) && is_subclass_of($model, 'AuRowObject') ) {
+                    $dbtbl = $dbname . '.' . $tblname;
+                    $describe['model'][$dbtbl] = $model;
+                }
+            }
+            $cache->put('schema', $dbname, $describe);
         }
-        $content = "<?php \nreturn " . var_export($describe, true) . ";\n";
-        touch($filename);
-        chmod($filename, 0777);
-        file_put_contents($filename, $content, LOCK_EX);
         return $describe;
     }
 
@@ -234,7 +230,7 @@ class AuRowObject extends ArrayObject
     public function exec_behavior($prop)
     {
         @list($behavior, $model, $foreign, $extra) = $this->_behaviors_[$prop];
-        $constructor = new AuConstructor($behavior, array( 
+        $constructor = new AuConstructor($behavior, array(
             $model, $foreign, $extra
         ));
         $result = $constructor->emit()->emit($this);

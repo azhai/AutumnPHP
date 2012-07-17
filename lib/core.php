@@ -5,7 +5,7 @@ defined('APPLICATION_ROOT') or die();
 class AuConfigure
 {
     protected $_data_ = array();        #数据
-    protected $_defaults_ = array();        #数据
+    protected $_defaults_ = array();    #默认数据
 
     public function __construct(array $data=null)
     {
@@ -167,11 +167,12 @@ class AuApplication
                 import( $items['import'] );
             }
             $class = isset($items['class']) ? $items['class'] : ucfirst($name);
+            $item_args = isset($items[$key]) ? $items[$key] : array();
             if ( isset($items['staticmethod']) ) {
-                $constructor = new AuProcedure($class, $items['staticmethod'], $items[$key]);
+                $constructor = new AuProcedure($class, $items['staticmethod'], $item_args);
             }
             else {
-                $constructor = new AuConstructor($class, $items[$key]);
+                $constructor = new AuConstructor($class, $item_args);
             }
             $obj = call_user_func_array(array($constructor, 'emit'), $args);
             if ( method_exists($obj, 'set_config_name') ) {
