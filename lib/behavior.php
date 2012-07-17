@@ -130,7 +130,7 @@ class AuBelongsTo extends AuBehavior
                 $vals []= $primary->{$this->foreign};
             }
             $this->procs []= new AuProcedure(null, 'assign_pkey', array($vals));
-            $add_row = array('AuRowSet', 'id_row');
+            $add_row = array('AuLazySet', 'id_row');
             $this->args = array($this->foreign_fields, array(), null, $add_row);
         }
         else {
@@ -155,16 +155,16 @@ class AuHasOne extends AuBehavior
                 $vals []= $primary->$pkey;
             }
             $single = 'AuHasOne' == get_class($this);
-            $add_row = array('AuRowSet', 'field_row');
-            $this->args = array($this->foreign_fields, array(), null, 
+            $add_row = array('AuLazySet', 'field_row');
+            $this->args = array($this->foreign_fields, array(), null,
                                 $add_row, $this->foreign, $single);
         }
         else {
             $vals = $this->primary->$pkey;
-            $this->args = $this->method == 'all' ? array($this->foreign_fields) : 
+            $this->args = $this->method == 'all' ? array($this->foreign_fields) :
                                                 array(null, $this->foreign_fields);
         }
-        $this->procs []= new AuProcedure(null, 'filter_by', array( 
+        $this->procs []= new AuProcedure(null, 'filter_by', array(
             array($this->foreign => $vals) )
         );
         return $schema;
@@ -206,7 +206,7 @@ class AuManyToMany extends AuBehavior
         $query = $query->emit($primary);
 
         $this->args = array($this->foreign_fields);
-        $this->procs []= new AuProcedure(null, 'assign_query', array( 
+        $this->procs []= new AuProcedure(null, 'assign_query', array(
             null, $query, $this->extra['right']
         ));
         return $schema;

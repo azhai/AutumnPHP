@@ -1,7 +1,7 @@
 <?php
 defined('APPLICATION_ROOT') or die();
 
-class optionFilter
+class SafeFilter
 {
     protected $view = null;
     protected $template = null;
@@ -16,7 +16,7 @@ class optionFilter
             $this->template->theme = $req->app->theme;
         }
         $user = $req->app->db()->factory('users')->get(1);
-        $this->view->user = cached('user', 0, $user);
+        $this->view->user = $user;
         return true;
     }
 
@@ -28,7 +28,7 @@ class optionFilter
 }
 
 
-class siderFilter
+class SiderFilter
 {
     protected $view = null;
 

@@ -23,14 +23,14 @@ function autoload($klass)
         'AuFetchAll' => 'behavior.php',
         'AuHasMany' => 'behavior.php',
         'AuHasOne' => 'behavior.php',
+        'AuLazyRow' => 'model.php',
+        'AuLazySet' => 'model.php',
         'AuLiteral' => 'database.php',
         'AuManyToMany' => 'behavior.php',
         'AuOrganization' => 'behavior.php',
         'AuProcedure' => 'core.php',
         'AuQuery' => 'database.php',
         'AuRequest' => 'request.php',
-        'AuRowObject' => 'model.php',
-        'AuRowSet' => 'model.php',
         'AuSchema' => 'model.php',
         'AuTemplate' => 'template.php',
     );
@@ -121,38 +121,6 @@ function import($import_path)
 }
 
 
-/**
- * 函数内对象缓存
- * USAGE:
- *  php > cached('app');  #获取app单例对象
- *  php > cached('model.User', 1);  #获取id=1的用户对象
- *  php > cached('model.User', 1，null, $proc);  #同上，但当id=1的用户不存在时，使用过程$proc创建一个
- *  php > cached('model.User', 1，$user);  #存储$user为id=1的用户对象
- **/
-function cached($ns, $id=null, $inst=null, $proc=null)
-{
-    #TODO: backend
-    static $objects = array(); //对象注册表
-    if (! array_key_exists($ns, $objects)) {
-        $objects[$ns] = array();
-    }
-
-    if (! is_null($inst)) { //存放对象
-        $objects[$ns][$id] = & $inst;
-    }
-    else if ( array_key_exists($id, $objects[$ns]) ) { //获取对象
-        $inst = & $objects[$ns][$id];
-    }
-    else { //不存在，尝试创建
-        $inst = $proc instanceof AuProcedure ? $proc->emit() : $proc;
-        if (! is_null($inst)) { //成功创建
-            $objects[$ns][$id] = & $inst;
-        }
-    }
-    return $inst;
-}
-
-
 function invoke_view($view_obj, $req) {
     //当$view不存在$action动作时，执行默认的index动作，并将$action作为动作的第一个参数
     if (! method_exists($view_obj, $req->action . 'Action')) {
@@ -168,7 +136,7 @@ function invoke_view($view_obj, $req) {
     $filters = empty($filters) ? array() : $filters;
     //按顺序执行Filters的before检查，未通过跳转到404错误页面
     foreach($filters as $filter) {
-        $construct = new AuConstructor($filter . 'Filter', array(& $view_obj));
+        $construct = new AuConstructor(ucfirst($filter) . 'Filter', array(& $view_obj));
         $filter_obj = $construct->emit();
         if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
             return $req->error(404);

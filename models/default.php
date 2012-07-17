@@ -2,7 +2,7 @@
 defined('APPLICATION_ROOT') or die();
 
 
-class Users extends AuRowObject
+class Users extends AuLazyRow
 {
     protected $_behaviors_ = array(
         'blogs' => array('AuHasMany', 'contents', 'authorId',
@@ -19,7 +19,7 @@ class Users extends AuRowObject
 }
 
 
-class Contents extends AuRowObject
+class Contents extends AuLazyRow
 {
     protected $_behaviors_ = array(
         'author' => array('AuBelongsTo', 'users', 'authorId'),
@@ -75,7 +75,7 @@ class Contents extends AuRowObject
 }
 
 
-class Comments extends AuRowObject
+class Comments extends AuLazyRow
 {
     protected $_behaviors_ = array(
         'author' => array('AuBelongsTo', 'users', 'authorId'),
@@ -91,7 +91,7 @@ class Comments extends AuRowObject
 }
 
 
-class Metas extends AuRowObject
+class Metas extends AuLazyRow
 {
     protected $_behaviors_ = array(
         //page 没有 category
@@ -101,7 +101,7 @@ class Metas extends AuRowObject
 }
 
 
-class Options extends AuRowObject
+class Options extends AuLazyRow
 {
     private static $_instances_ = array();
 

@@ -184,7 +184,7 @@ class AuApplication
     }
 
     public function run() {
-        $req = cached('req', 0, new AuRequest($this));
+        $req = new AuRequest($this);
         require_once APPLICATION_ROOT . DS . 'views' . $req->file;
         //调用对象方法
         $view = camelize(ltrim(substr($req->file, 0, -4), '/'));

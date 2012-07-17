@@ -31,7 +31,7 @@ class AuSchema extends AuConfigure
         parent::__construct($desc);
     }
 
-    public function get_model($default='AuRowObject')
+    public function get_model($default='AuLazyRow')
     {
         return empty($this->model) ? $default : $this->model;
     }
@@ -75,7 +75,7 @@ class AuSchema extends AuConfigure
                 $tblname = strtolower( substr($table, $strip_lenth) );
                 $describe['desc'][$tblname] = self::parse_table($table, $db);
                 $model = camelize($tblname);
-                if ( class_exists($model) && is_subclass_of($model, 'AuRowObject') ) {
+                if ( class_exists($model) && is_subclass_of($model, 'ArrayObject') ) {
                     $dbtbl = $dbname . '.' . $tblname;
                     $describe['model'][$dbtbl] = $model;
                 }
@@ -106,7 +106,7 @@ class AuSchema extends AuConfigure
 /**
  * 结果对象
  **/
-class AuRowObject extends ArrayObject
+class AuLazyRow extends ArrayObject
 {
     private $_state_ = '';
     protected $_schema_ = null;
@@ -121,7 +121,7 @@ class AuRowObject extends ArrayObject
 
     public static function create($row=array(), $schema=null) {
         $row = empty($row) ? $schema->defaults : $row;
-        $model = $schema->get_model('AuRowObject');
+        $model = $schema->get_model('AuLazyRow');
         $constructor = new AuConstructor($model, array($row, $schema));
         $obj = $constructor->emit();
         $obj->set_state('NEWBIE');
@@ -135,7 +135,7 @@ class AuRowObject extends ArrayObject
         $id = slice_assoc($row, $pkey_arr);
         $obj = AuDatabase::get($collection, $id);
         if ( is_null($obj) ) {
-            $model = $schema->get_model('AuRowObject');
+            $model = $schema->get_model('AuLazyRow');
             $constructor = new AuConstructor($model, array($row, $schema));
             $obj = $constructor->emit();
             $id = is_array($id) ? implode(':', $id) : $id;
@@ -244,17 +244,17 @@ class AuRowObject extends ArrayObject
  * 数据集，自动将row封装成obj
  * NOTICE: 在json_encode输出前，要用(array)将它强制转化为索引数组
  */
-class AuRowSet extends ArrayIterator
+class AuLazySet extends ArrayIterator
 {
     protected $_schema_ = null;
-    protected $_rowclass_ = 'AuRowObject';
+    protected $_rowclass_ = 'AuLazyRow';
 
     public function __construct(array $data=array(), $schema=null)
     {
         parent::__construct($data);
         $this->set_schema($schema);
         if ( ! is_null($schema) ) {
-            $this->_rowclass_ = $schema->get_model('AuRowObject');
+            $this->_rowclass_ = $schema->get_model('AuLazyRow');
         }
     }
 
@@ -292,10 +292,10 @@ class AuRowSet extends ArrayIterator
     {
         $key = $row[$field];
         if ( $single === false ) {
-            $result->set_rowclass('AuRowSet');
+            $result->set_rowclass('AuLazySet');
             if ( ! $result->offsetExists($key) ) {
-                $rowset = new AuRowSet(array(), $result->get_schema());
-                $rowset->set_rowclass('AuRowObject');
+                $rowset = new AuLazySet(array(), $result->get_schema());
+                $rowset->set_rowclass('AuLazyRow');
                 $result->offsetSet($key, $rowset);
             }
             $result->offsetGet($key)->append($row);
@@ -311,7 +311,7 @@ class AuRowSet extends ArrayIterator
     {
         if ($row) {
             $rowclass = $this->get_rowclass();
-            if ($rowclass == 'AuRowObject') {
+            if ($rowclass == 'AuLazyRow') {
                 $func = array($rowclass, 'wrap');
                 $obj = call_user_func($func, $row, $this->get_schema());
                 return $obj;

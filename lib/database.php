@@ -204,7 +204,7 @@ class AuDatabase
         }
         if ( is_null($obj) ) {
             $schema = AuSchema::instance($tblname, $this->dbname);
-            $model = $schema->get_model('AuRowObject');
+            $model = $schema->get_model('AuLazyRow');
             $obj = call_user_func(array($model,'create'), array(), $schema);
         }
         foreach ($withes as $with) {
@@ -341,7 +341,7 @@ class AuQuery
                         $add_row=null, $add_pkey='id')
     {
         if ( is_null($fetch) ) {
-            $fetch = new AuFetchAll('AuRowSet', $this->schema);
+            $fetch = new AuFetchAll('AuLazySet', $this->schema);
         }
         if ( ! is_null($add_row) ) {
             $fetch->add_row = $add_row;
@@ -384,7 +384,7 @@ class AuQuery
             $pkey = $this->schema->get_pkey();
             $this->assign_pkey($id, $pkey);
         }
-        $model = $this->schema->get_model('AuRowObject');
+        $model = $this->schema->get_model('AuLazyRow');
         $fetch = new AuFetchObject($model, 'wrap', $this->schema);
         $obj = $this->select($fields, array(), $fetch);
         return $obj;
@@ -520,7 +520,7 @@ class AuQuery
     {
         $pri = $primary[0];
         @list($behavior, $model, $foreign, $extra) = $pri->get_behavior($prop);
-        $constructor = new AuConstructor($behavior, array( 
+        $constructor = new AuConstructor($behavior, array(
             $model, $foreign, $extra
         ));
         $result = $constructor->emit()->emit($primary);

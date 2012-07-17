@@ -4,7 +4,7 @@ require_once(APPLICATION_ROOT . DS . 'views' . DS . 'filters' . DS . 'common.php
 class IndexView
 {
     public function filters($action) {
-        return array('option', 'sider');
+        return array('safe', 'sider');
     }
 
     public function indexAction($req) { #首页
