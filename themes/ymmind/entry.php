@@ -21,6 +21,6 @@ function block_entry_content($this, $user, $entry, $comments) {
 }
 
 function block_comments($this, $user, $entry, $comments) {
-    include('comments.php');
+    include('../default/comments.php');
 }
 ?>

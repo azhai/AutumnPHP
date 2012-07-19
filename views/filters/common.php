@@ -12,11 +12,18 @@ class SafeFilter
     }
 
     public function before($req) {
-        if ( isset($req->app->theme) ) {
+        $user = $req->app->db()->factory('users')->get(1);
+        $user->theme = Options::instance()->theme;
+        $this->view->user = $user;
+        if ( isset($_REQUEST['theme']) ) {
+            $this->template->theme = $_REQUEST['theme'];
+        }
+        else if ( isset($this->view->user->theme) ) {
+            $this->template->theme = $this->view->user->theme;
+        }
+        else if ( isset($req->app->theme) ) {
             $this->template->theme = $req->app->theme;
         }
-        $user = $req->app->db()->factory('users')->get(1);
-        $this->view->user = $user;
         return true;
     }
 

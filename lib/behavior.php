@@ -2,56 +2,6 @@
 defined('APPLICATION_ROOT') or die();
 
 
-class AuFetchObject extends AuProcedure
-{
-    public function __construct($subject, $method, $schema)
-    {
-        parent::__construct($subject, $method);
-        $this->schema = $schema;
-    }
-
-    public function emit($stmt)
-    {
-        $row = $stmt->fetch();
-        if ( $row === false ) {
-            return null;
-        }
-        else {
-            $func = array($this->subject, $this->method);
-            return call_user_func($func, $row, $this->schema);
-        }
-    }
-}
-
-
-class AuFetchAll extends AuConstructor
-{
-    public $add_row = null;
-    public $add_pkey = 'id';
-
-    public function __construct($subject, $schema, $add_row=null)
-    {
-        parent::__construct($subject);
-        $this->schema = $schema;
-        $this->add_row = $add_row;
-    }
-
-    public function emit($stmt)
-    {
-        $result = new $this->subject;
-        $result->set_schema($this->schema);
-        if ( is_null($this->add_row) ) {
-            $this->add_row = array($result, 'add_row');
-        }
-        $i = 0;
-        while ($row = $stmt->fetch()) {
-            call_user_func($this->add_row, $row, $i++, & $result, $this->add_pkey);
-        }
-        return $result;
-    }
-}
-
-
 class AuBehavior extends AuProcedure
 {
     public $procs = array();
@@ -130,8 +80,7 @@ class AuBelongsTo extends AuBehavior
                 $vals []= $primary->{$this->foreign};
             }
             $this->procs []= new AuProcedure(null, 'assign_pkey', array($vals));
-            $add_row = array('AuLazySet', 'id_row');
-            $this->args = array($this->foreign_fields, array(), null, $add_row);
+            $this->args = array($this->foreign_fields, 'with_unique');
         }
         else {
             $this->args = array($primary->{$this->foreign}, $this->foreign_fields);
@@ -154,10 +103,8 @@ class AuHasOne extends AuBehavior
             foreach ($this->primary_set as $primary) {
                 $vals []= $primary->$pkey;
             }
-            $single = 'AuHasOne' == get_class($this);
-            $add_row = array('AuLazySet', 'field_row');
-            $this->args = array($this->foreign_fields, array(), null,
-                                $add_row, $this->foreign, $single);
+            $method = 'AuHasOne' == get_class($this) ? 'with_unique' : 'with_field';
+            $this->args = array($this->foreign_fields, $method, array($this->foreign));
         }
         else {
             $vals = $this->primary->$pkey;
@@ -211,11 +158,4 @@ class AuManyToMany extends AuBehavior
         ));
         return $schema;
     }
-}
-
-
-class AuOrganization extends AuBehavior
-{
-    public $method = 'all';
-    public $steps = array('filter_by');
 }

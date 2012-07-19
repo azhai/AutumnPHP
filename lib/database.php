@@ -29,8 +29,6 @@ class AuDatabase
     private $user = '';
     private $password = '';
     public $prefix = '';
-
-    public static $objects = array();
     public static $sql_history = array();
 
     public function __construct($dsn, $user='', $password='', $prefix='')
@@ -45,22 +43,13 @@ class AuDatabase
         $this->dbname = $key;
     }
 
-    public function factory($tblname, $schema=null, $queryclass='AuQuery')
-    {
-        if ( is_null($schema) ) {
-            $schema = AuSchema::instance($tblname, $this->dbname);
-        }
-        $constructor = new AuConstructor($queryclass, array($this, $schema));
-        return $constructor->emit();
-    }
-
     /*连接数据库*/
     public function connect()
     {
         if ( is_null($this->conn) ) {
             $opts = array(
                 PDO::ATTR_PERSISTENT => false,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                //PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, //错误模式，默认PDO::ERRMODE_SILENT
                 PDO::ATTR_ORACLE_NULLS => PDO::NULL_TO_STRING, //将空值转为空字符串
             );
@@ -86,16 +75,15 @@ class AuDatabase
 
     public function quote($args)
     {
-        $conn = $this->connect();
         if ( is_array($args) ) {
-            $qargs = array();
-            foreach ($args as $arg) {
-                $qargs []= $arg instanceof AuLiteral ? $arg : $conn->quote($arg, PDO::PARAM_STR);
-            }
-            return $qargs;
+            return array_map(array($this, 'quote'), $args);
+        }
+        else if ( $args instanceof AuLiteral ) {
+            return $args->text;
         }
         else {
-            return $arg instanceof AuLiteral ? $arg : $conn->quote($args, PDO::PARAM_STR);
+            $conn = $this->connect();
+            return $conn->quote($args, PDO::PARAM_STR);
         }
     }
 
@@ -121,18 +109,24 @@ class AuDatabase
     }
 
     /*执行查询操作*/
-    public function query($sql, $args=array(), $fetch=null)
+    public function query($sql, $args=array(), $fetch='all')
     {
         $conn = $this->connect();
         self::$sql_history []= array($sql, $args);
         $stmt = $conn->prepare($sql);
         $stmt->execute($args);
         try {
-            if ( is_null($fetch) ) {
-                $result = $stmt->fetchAll();
+            if ( empty($fetch) || $fetch == 'all' ) {
+                $result = $stmt->fetchAll( PDO::FETCH_ASSOC );
+            }
+            else if ( $fetch == 'one' ) {
+                $result = $stmt->fetch( PDO::FETCH_ASSOC );
+            }
+            else if ( $fetch == 'column' ) {
+                $result = $stmt->fetchColumn();
             }
             else {
-                $result = $fetch->emit($stmt);
+                $result = $fetch->emit_prepend($stmt);
             }
         } catch(PDOException $e) {
             trigger_error("DB query failed:" . $e->getMessage(), E_USER_ERROR);
@@ -169,75 +163,14 @@ class AuDatabase
         app()->log( $this->dump_all(true) );
     }
 
-    public static function & get_collection($schema)
+    public function factory($tblname, $schema=null, $rowclass='Object', $setclass='Array')
     {
-        if ( ! array_key_exists($schema->dbname, self::$objects) ) {
-            self::$objects[ $schema->dbname ] = array();
-        }
-        if ( ! array_key_exists($schema->tblname, self::$objects[ $schema->dbname ]) ) {
-            self::$objects[ $schema->dbname ][ $schema->tblname ] = array();
-        }
-        $collection = self::$objects[ $schema->dbname ][ $schema->tblname ];
-        return $collection;
-    }
-
-    public static function get($collection, $id)
-    {
-        $id = is_array($id) ? implode(':', $id) : $id;
-        if ( array_key_exists($id, $collection) ) {
-            $obj = $collection[$id];
-            if ( $obj->state == 'DELETED' ) {
-                unset($collection[$id]);
-                return null;
-            }
-            else {
-                return $obj;
-            }
-        }
-    }
-
-    public function get_or_create($tblname, $id=null, $withes=array())
-    {
-        $obj = null;
-        if ( $id === 0 || ! empty($id) ) {
-            $obj = $this->factory($tblname)->get($id);
-        }
-        if ( is_null($obj) ) {
+        if ( is_null($schema) ) {
             $schema = AuSchema::instance($tblname, $this->dbname);
-            $model = $schema->get_model('AuLazyRow');
-            $obj = call_user_func(array($model,'create'), array(), $schema);
         }
-        foreach ($withes as $with) {
-            $obj->$with;
-        }
+        $obj = new AuQuery($this, $schema->table, $schema->get_pkey());
+        $obj->factory = AuFactory::instance($schema, $rowclass, $setclass);
         return $obj;
-    }
-
-    public function save($obj)
-    {
-        $schema = $obj->get_schema();
-        $pkey_vals = $obj->get_ids();
-        $data = $obj->get_changes();
-        $query = $this->factory($schema->tblname);
-        if ( $obj->get_state() == 'NEWBIE' ) {
-            $result = $query->insert($data);
-        }
-        else if ( ! empty($pkey_vals) ) {
-            $result = $query->filter_by($pkey_vals)->update($data);
-        }
-        return $result;
-    }
-
-    public function remove($obj)
-    {
-        $schema = $obj->get_schema();
-        $pkey_vals = $obj->get_ids();
-        if ( ! empty($pkey_vals) ) {
-            $query = $this->factory($schema->tblname)->filter_by($pkey_vals);
-            $query->delete();
-            $id = implode(':', array_values($pkey_vals));
-            unset(self::$objects[ $schema->dbname ][ $schema->tblname ][$id]);
-        }
     }
 }
 
@@ -247,22 +180,25 @@ class AuDatabase
  **/
 class AuQuery
 {
+    public $factory = null;
     public $db = null;
-    public $schema = null;
+    public $table = '';
+    public $pkey = 'id';
 
+    //public $pvals = array();
     public $conds = array();
     public $or_conds = array();
     public $params = array();
 
     public $orders = array();
     public $groups = array();
-
     public $withes = array();
 
-    public function __construct($db, $schema)
+    public function __construct($db, $table='', $pkey='id')
     {
         $this->db = $db;
-        $this->schema = $schema;
+        $this->table = $table;
+        $this->pkey = $pkey;
     }
 
     public function where()
@@ -270,6 +206,16 @@ class AuQuery
         if (! empty($this->conds) ) {
             $sql = implode(" AND ", $this->conds);
         }
+        /*if (! empty($this->pvals) ) {
+            if ( count($this->pvals) <= 1) {
+                $cond = $func( $this->pvals[0] );
+                $sql = $cond . " AND " . $sql;
+            }
+            else {
+                $conds = array_map($func, $this->pvals);
+                $sql = "(" . implode(" OR ", $conds) . ") AND " . $sql;
+            }
+        }*/
         if (! empty($this->or_conds) ) {
             $sql = "(" . $sql . implode(") OR (", $this->or_conds) . ")";
         }
@@ -298,7 +244,7 @@ class AuQuery
         }
         $mask = substr($mask,-2) == ", " ? substr($mask, 0, -2) : $mask;
         $params = array_merge($params, $this->params);
-        $sql = sprintf("UPDATE `%s` SET %s %s", $this->schema->table, $mask, $this->where());
+        $sql = sprintf("UPDATE `%s` SET %s %s", $this->table, $mask, $this->where());
         $result = $this->db->execute(rtrim($sql), $params);
         return $result;
     }
@@ -314,22 +260,22 @@ class AuQuery
         $mask = substr($mask,-2) == ", " ? substr($mask, 0, -2) : $mask;
         $placeholder = rtrim( str_repeat( '?,', count($params) ), ',');
         $sql = sprintf("%s INTO `%s` (%s) VALUES (%s)", $replace ? "REPLACE" : "INSERT",
-                       $this->schema->table, $mask, $placeholder);
+                       $this->table, $mask, $placeholder);
         $result = $this->db->execute(rtrim($sql), $params, true);
         return $result;
     }
 
     public function delete()
     {
-        $sql = sprintf("DELETE FROM `%s` %s", $this->schema->table, $this->where());
+        $sql = sprintf("DELETE FROM `%s` %s", $this->table, $this->where());
         $result = $this->db->execute(rtrim($sql), $this->params);
         return $result;
     }
 
-    public function select($fields='*', $limit=array(), $fetch=null)
+    public function select($fields='*', $fetch='all', array $limit=array())
     {
         $sql = sprintf("SELECT %s FROM `%s` %s %s", $fields,
-                       $this->schema->table, $this->where(), $this->extra());
+                       $this->table, $this->where(), $this->extra());
         if ( ! empty($limit) ) {
             $sql = rtrim($sql) . " LIMIT " . implode(",", $limit);
         }
@@ -337,29 +283,49 @@ class AuQuery
         return $result;
     }
 
-    public function all($fields='*', $limit_params=array(), $fetch=null,
-                        $add_row=null, $add_pkey='id')
+    public function get($id=null, $fields='*', $method='fetch_row')
     {
-        if ( is_null($fetch) ) {
-            $fetch = new AuFetchAll('AuLazySet', $this->schema);
+        $factory = $this->factory;
+        if ( ! is_null($id) ) {
+            if ( $fields == '*' && ! is_null($factory) ) {
+                $obj = $factory->get_object($id);
+                if ( ! is_null($obj) ) {
+                    return $obj;
+                }
+            }
+            $this->assign_pkey($id);
         }
-        if ( ! is_null($add_row) ) {
-            $fetch->add_row = $add_row;
-            $fetch->add_pkey = $add_pkey;
+        $fetch = is_null($factory) ? 'one' : new AuProcedure($factory, $method);
+        $obj = $this->select($fields, $fetch);
+        return $obj;
+    }
+
+    public function all($fields='*', $method='fetch_all',
+                            $fetch_args=array(), $limit_params=array())
+    {
+        $count = 0;
+        $factory = $this->factory;
+        if ( substr($method, 0, 5) == 'with_' ) {
+            $result = $factory->$method($this, $fields, $fetch_args, $limit_params);
         }
-        $result = $this->select($fields, $limit_params, $fetch);
-        $count = $result instanceof ArrayIterator ? $result->count() : count($result);
-        if ( $count > 0 && ! empty($this->withes) ) {
-            foreach ($this->withes as $with) {
-                $this->with_relation($result, $with);
+        else {
+            $fetch = new AuProcedure($factory, $method, $fetch_args);
+            $result = $this->select($fields, $fetch, $limit_params);
+        }
+        if ( ! empty($this->withes) ) {
+            $count = $result instanceof ArrayIterator ? $result->count() : count($result);
+            if ( $count > 0 ) {
+                foreach ($this->withes as $with) {
+                    $factory->attach_relation($result, $with);
+                }
             }
         }
         return $result;
     }
 
     /* 不会进行上溢出检查 */
-    public function page($page, $limit=10, $fields='*', $fetch=null,
-                        $add_row=null, $add_pkey='id')
+    public function page($page, $limit=10, $fields='*',
+                            $method='fetch_all', $fetch_args=array())
     {
         $page = intval($page);
         if ( $page > 1 ) {
@@ -368,26 +334,7 @@ class AuQuery
         else {
             $limit_params = array($limit);
         }
-        return $this->all($fields, $limit_params, $fetch, $add_row, $add_pkey);
-    }
-
-    public function get($id=null, $fields='*', $fetch=null)
-    {
-        if ( ! is_null($id) ) {
-            if ( $fields == '*' ) {
-                $collection = AuDatabase::get_collection($this->schema);
-                $obj = AuDatabase::get($collection, $id);
-                if ( ! is_null($obj) ) {
-                    return $obj;
-                }
-            }
-            $pkey = $this->schema->get_pkey();
-            $this->assign_pkey($id, $pkey);
-        }
-        $model = $this->schema->get_model('AuLazyRow');
-        $fetch = new AuFetchObject($model, 'wrap', $this->schema);
-        $obj = $this->select($fields, array(), $fetch);
-        return $obj;
+        return $this->all($fields, $method, $fetch_args, $limit_params);
     }
 
     public function __call($name, $args)
@@ -405,14 +352,56 @@ class AuQuery
             else {
                 $fields = sprintf("%s(%s)", $name, implode(", ",$args));
             }
-            $fetch = new AuProcedure('', create_function('$stmt', 'return $stmt->fetchColumn();'));
-            $result = $this->select($fields, array(), $fetch);
+            $result = $this->select($fields, 'column');
             return $result;
         }
     }
 
+    public function get_or_create($id=null, $withes=array())
+    {
+        $obj = null;
+        if ( $id === 0 || ! empty($id) ) { //是否缓存
+            $obj = $this->factory->get_object($id);
+        }
+        if ( is_null($obj) ) { //是否存在于数据库
+            $obj = $this->get($id);
+            if ( is_null($obj) ) { //创建一个新的
+                $obj = $this->create();
+            }
+        }
+        foreach ($withes as $with) {
+            $obj->$with;
+        }
+        return $obj;
+    }
+
+    public function save($obj)
+    {
+        $pkey_vals = $obj->get_id();
+        $data = $obj->get_changes();
+        if ( $obj->get_state() == 'NEWBIE' ) {
+            $id = $this->insert($data);
+        }
+        else if ( ! empty($pkey_vals) ) {
+            $result = $this->filter_by($pkey_vals)->update($data);
+            $id = implode(':', array_values($pkey_vals));
+        }
+        $this->factory->objects->put($this->name, $id, $obj);
+        return $result;
+    }
+
+    public function remove($obj)
+    {
+        $pkey_vals = $obj->get_id();
+        if ( ! empty($pkey_vals) ) {
+            $this->filter_by($pkey_vals)->delete();
+            $id = implode(':', array_values($pkey_vals));
+            $this->factory->objects->delete($this->name, $id);
+        }
+    }
+
     public function assign($field, $value) {
-        $this->assign_field($field, $value);
+        $this->assign_field($value, $field);
         return $this;
     }
     public function assign_field($field, $value)
@@ -437,31 +426,31 @@ class AuQuery
 
     public function assign_pkey($value, $pkey=null)
     {
-        $pkey = is_null($pkey) ? $this->schema->get_pkey() : $pkey;
+        $pkey = is_null($pkey) ? $this->pkey : $pkey;
         if ( is_array($pkey) ) {
             if ( is_array($value) ) {
                 foreach ($pkey as $pk) {
                     if ( isset($value[$pk]) ) {
-                        $this->assign($pk, $value[$pk]);
+                        $this->assign_field($pk, $value[$pk]);
                     }
                 }
             }
             else {
-                $this->assign($pkey[0], $value);
+                $this->assign_field($pkey[0], $value);
             }
         }
         else {
-            $this->assign($pkey, $value);
+            $this->assign_field($pkey, $value);
         }
         return $this;
     }
 
     public function assign_query($field, $query, $qfield='')
     {
-        $field = empty($field) ? $this->schema->get_pkey() : $field;
+        $field = empty($field) ? $this->pkey : $field;
         $qfield = empty($qfield) ? $field : $qfield;
         $sql = sprintf("SELECT %s FROM `%s` %s %s", $qfield,
-                       $query->schema->table, $query->where(), $query->extra());
+                       $query->table, $query->where(), $query->extra());
         $this->conds []= $field . ' IN ('. $sql .')';
         $this->params = array_merge($this->params, $query->params);
         return $this;
@@ -469,9 +458,7 @@ class AuQuery
 
     public function filter_by($data)
     {
-        foreach ($data as $field => $value) {
-            $this->assign($field, $value);
-        }
+        array_walk($data, array($this, 'assign'));
         return $this;
     }
 
@@ -515,8 +502,165 @@ class AuQuery
         $this->withes = func_get_args();
         return $this;
     }
+}
 
-    public function with_relation(& $primary, $prop)
+
+class AuFactory
+{
+    public static $cache = null;
+    public $objects = null;
+    public $name = '';
+    public $schema = null;
+    public $rowclass = 'Object';
+    public $setclass = 'Array';
+
+    private function __construct($schema, $rowclass='Object', $setclass='Array')
+    {
+        $this->schema = $schema;
+        $this->rowclass = $rowclass;
+        $this->setclass = $setclass;
+        $this->name = 'object.' . $schema->dbname . '.' . $schema->tblname;
+    }
+
+    public static function instance($schema, $rowclass='Object', $setclass='Array')
+    {
+        if ( is_null(self::$cache) ) {
+            self::$cache = app()->cache();
+        }
+        if ( ! is_null($schema) ) {
+            $rowclass = $schema->get_model($rowclass);
+        }
+        if ( is_subclass_of($rowclass, 'AuLazyRow') ) {
+            $setclass = 'AuLazySet';
+        }
+        $ns = 'model.' . $schema->dbname;
+        $obj = self::$cache->get($ns, $schema->tblname);
+        if ( is_null($obj) ) {
+            $obj = new AuFactory($schema, $rowclass, $setclass);
+            self::$cache->put($ns, $schema->tblname, $obj);
+        }
+        return $obj;
+    }
+
+    public function to_id($obj)
+    {
+        if ( $obj instanceof AuLazyRow ) {
+            $id = $obj->get_id();
+        }
+        else if ( ! is_scalar($obj) ) {
+            $pkey_arr = $this->schema->pkey_array;
+            $id = slice_assoc((array)$obj, $pkey_arr);
+        }
+        else {
+            $id = $obj;
+        }
+        return $id;
+    }
+
+    public function get_object($id, $proc=null)
+    {
+        if ( is_null($this->objects) ) {
+            $this->objects = app()->cache();
+        }
+        $id = is_array($id) ? implode(':', $id) : $id;
+
+        if ( is_null($proc) ) {
+            $obj = $this->objects->get($this->name, $id);
+        }
+        else {
+            $obj = $this->objects->retrieve($this->name, $id, $proc);
+        }
+        if ( ! is_null($obj) && $obj->state == 'DELETED' ) {
+            $this->objects->delete($this->name, $id);
+            $obj = null;
+        }
+        return $obj;
+    }
+
+    public function create(array $row=array()) {
+        $row = empty($row) ? $this->schema->defaults : $row;
+        $model = $this->schema->get_model( $this->rowclass );
+        $constructor = new AuConstructor($model, array($row));
+        $obj = $constructor->emit();
+        if ( is_subclass_of($model, 'AuLazyRow') ) {
+            $obj->set_state('NEWBIE');
+            $obj->set_factory($this);
+        }
+        return $obj;
+    }
+
+    public function wrap(array $row)
+    {
+        $model = $this->schema->get_model( $this->rowclass );
+        $proc = new AuProcedure($this, 'create', array($row));
+        $obj = $this->get_object($this->to_id($row), $proc);
+        return $obj;
+    }
+
+    public function fetch_row($stmt)
+    {
+        if ( $this->rowclass == 'Object' ) {
+            return $stmt->fetch( PDO::FETCH_OBJ );
+        }
+        else {
+            $row = $stmt->fetch( PDO::FETCH_ASSOC );
+            return $this->wrap($row);
+        }
+    }
+
+    public function fetch_all($stmt)
+    {
+        if ( $this->setclass == 'Array' && $this->rowclass == 'Object' ) {
+            return $stmt->fetchAll( PDO::FETCH_OBJ );
+        }
+        $rows = $stmt->fetchAll( PDO::FETCH_ASSOC );
+        if ( $this->rowclass == 'Array' ) {
+            return $rows;
+        }
+        else if ( $this->setclass == 'Array' ) {
+            $count = count($rows);
+            return $count == 0 ? array() : array_map(array($this, 'wrap'), $rows);
+        }
+        else {
+            $constructor = new AuConstructor($this->setclass);
+            $result = $constructor->emit($rows, $this);
+            return $result;
+        }
+    }
+
+    public function fetch_with($stmt, $unique=false)
+    {
+        if ( $unique ) {
+            $mode = PDO::FETCH_ASSOC | PDO::FETCH_GROUP | PDO::FETCH_UNIQUE;
+        }
+        else {
+            $mode = PDO::FETCH_ASSOC | PDO::FETCH_GROUP;
+        }
+        $rows = $stmt->fetchAll($mode);
+        return $rows;
+    }
+
+    public function with_field($query, $fields='*', $fetch_args=array(), $limit_params=array())
+    {
+        @list($key, $unique) = $fetch_args;
+        if ($fields == '*') {
+            $fields = sprintf('%s, `%s`.*', $key, $query->table);
+        }
+        else {
+            $fields = sprintf('%s, %s', $key, $fields);
+        }
+        $fetch = new AuProcedure($this, 'fetch_with', array($unique));
+        $rows = $query->select($fields, $fetch, $limit_params);
+        return new AuLazySet($rows, $this);
+    }
+
+    public function with_unique($query, $fields='*', $fetch_args=array(), $limit_params=array())
+    {
+        $key = empty($fetch_args) ? $query->pkey : $fetch_args[0];
+        return $this->with_field($query, $fields, array($key, true), $limit_params);
+    }
+
+    public function attach_relation(& $primary, $prop)
     {
         $pri = $primary[0];
         @list($behavior, $model, $foreign, $extra) = $pri->get_behavior($prop);
@@ -529,7 +673,6 @@ class AuQuery
             foreach ($primary as $i => $pri) {
                 $fval = $pri->$foreign;
                 $pri->offsetSet($prop, $result[$fval]);
-                $primary->offsetSet($i, $pri);
             }
         }
         else if ($behavior == 'AuHasOne' || $behavior == 'AuHasMany') {
@@ -540,7 +683,6 @@ class AuQuery
                     $rel_result = $rel_result ? $rel_result : array();
                 }
                 $pri->offsetSet($prop, $rel_result);
-                $primary->offsetSet($i, $pri);
             }
         }
         return $primary;

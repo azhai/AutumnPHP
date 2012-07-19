@@ -2,33 +2,48 @@
 defined('APPLICATION_ROOT') or die();
 
 
+/**
+ * 数据表的描述
+ **/
 class AuSchema extends AuConfigure
 {
+    protected static $_pool_ = null;
     protected $_defaults_ = array(
         'table'=>'', 'pkey_array'=>array('id'),
         'types'=>array(), 'defaults'=>array()
     );
     public $dbname = 'default';
     public $tblname = '';
-    public static $all_descs = array();
-    public static $models = array();
-    public static $tables = array();
 
-    public function __construct($tblname, $dbname='default')
+    public function __construct($tblname, $dbname='default', $desc=array())
     {
         $this->tblname = $tblname;
         $this->dbname = $dbname;
-        if ( array_key_exists($tblname, self::$all_descs[$dbname]) ) {
-            $desc = self::$all_descs[$dbname][$tblname];
-            $dbtbl = $dbname . '.' . $tblname;
-            $desc['model'] = isset( self::$models[$dbtbl] ) ? self::$models[$dbtbl] : '';
-        }
-        else {
-            $desc = array();
-            $db = app()->db($dbname);
-            $this->_defaults_['table'] = $db->prefix . $tblname;
-        }
         parent::__construct($desc);
+    }
+
+    public static function instance($tblname, $dbname='default')
+    {
+        if ( is_null(self::$_pool_) ) {
+            self::$_pool_ = app()->cache();
+        }
+        $ns = 'schema.db.' . $dbname;
+        $obj = self::$_pool_->get($ns, $tblname);
+        if ( is_null($obj) ) {
+            $db = app()->db($dbname);
+            $structs = self::describe_structs($dbname, $db);
+            $models = self::describe_models($dbname, array_keys($structs));
+            if ( array_key_exists($tblname, $structs) ) {
+                $desc = $structs[$tblname];
+                $desc['model'] = isset( $models[$tblname] ) ? $models[$tblname] : '';
+            }
+            else {
+                $desc = array('table' => $db->prefix . $tblname);
+            }
+            $obj = new AuSchema($tblname, $dbname, $desc);
+            self::$_pool_->put($ns, $tblname, $obj);
+        }
+        return $obj;
     }
 
     public function get_model($default='AuLazyRow')
@@ -43,46 +58,40 @@ class AuSchema extends AuConfigure
         return $pkey;
     }
 
-    public static function instance($tblname, $dbname='default')
+    public static function describe_structs($dbname, $db)
     {
-        if ( ! array_key_exists($tblname, self::$tables) ) {
-            if ( ! array_key_exists($dbname, self::$all_descs) ) {
-                $describe = self::describe($dbname);
-                self::$all_descs[$dbname] = $describe['desc'];
-                self::$models = array_merge(self::$models, $describe['model']);
-            }
-            self::$tables[$tblname] = new AuSchema($tblname, $dbname);
-        }
-        return self::$tables[$tblname];
-    }
-
-    public static function describe($dbname, $db=null)
-    {
-        $cache = app()->cache()->file;
-        $describe = $cache->get('schema', $dbname);
-        if ( is_null($describe) ) {
-            if ( is_null($db) ) {
-                $db = app()->db($dbname);
-            }
-            $describe = array('model'=>array(), 'desc'=>array());
+        $cache = app()->cache('', 'file');
+        $structs = $cache->get('schema.struct', $dbname, array());
+        if ( empty($structs) ) {
             $prefix = str_replace('_', '\_', $db->prefix);
             $strip_lenth = empty($prefix) ? 0 : strlen($prefix) - 1;
             $sql = "SHOW TABLES LIKE '" . $prefix . "%'";
             $tables = array_map('array_pop', $db->query($sql));
 
-            import('libs.models.*');
             foreach ($tables as $table) {
                 $tblname = strtolower( substr($table, $strip_lenth) );
-                $describe['desc'][$tblname] = self::parse_table($table, $db);
+                $structs[$tblname] = self::parse_table($table, $db);
+            }
+            $cache->put('schema.struct', $dbname, $structs);
+        }
+        return $structs;
+    }
+
+    public static function describe_models($dbname, $tblnames)
+    {
+        $cache = app()->cache('', 'file');
+        $models = $cache->get('schema.model', $dbname, array());
+        if ( empty($models) ) {
+            import('libs.models.*');
+            foreach ($tblnames as $tblname) {
                 $model = camelize($tblname);
                 if ( class_exists($model) && is_subclass_of($model, 'ArrayObject') ) {
-                    $dbtbl = $dbname . '.' . $tblname;
-                    $describe['model'][$dbtbl] = $model;
+                    $models[$tblname] = $model;
                 }
             }
-            $cache->put('schema', $dbname, $describe);
+            $cache->put('schema.model', $dbname, $models);
         }
-        return $describe;
+        return $models;
     }
 
     public static function parse_table($table, $db) {
@@ -104,45 +113,18 @@ class AuSchema extends AuConfigure
 
 
 /**
- * 结果对象
+ * 结果对象，自动查询关联对象
  **/
 class AuLazyRow extends ArrayObject
 {
     private $_state_ = '';
-    protected $_schema_ = null;
+    protected $_factory_ = null;
     protected $_behaviors_ = array();
     protected $_virtuals_ = array();
 
-    public function __construct(array $data=array(), $schema=null)
+    public function __construct(array $data=array())
     {
         parent::__construct($data, parent::ARRAY_AS_PROPS);
-        $this->set_schema($schema);
-    }
-
-    public static function create($row=array(), $schema=null) {
-        $row = empty($row) ? $schema->defaults : $row;
-        $model = $schema->get_model('AuLazyRow');
-        $constructor = new AuConstructor($model, array($row, $schema));
-        $obj = $constructor->emit();
-        $obj->set_state('NEWBIE');
-        return $obj;
-    }
-
-    public static function wrap($row, $schema)
-    {
-        $collection = AuDatabase::get_collection($schema);
-        $pkey_arr = $schema->pkey_array;
-        $id = slice_assoc($row, $pkey_arr);
-        $obj = AuDatabase::get($collection, $id);
-        if ( is_null($obj) ) {
-            $model = $schema->get_model('AuLazyRow');
-            $constructor = new AuConstructor($model, array($row, $schema));
-            $obj = $constructor->emit();
-            $id = is_array($id) ? implode(':', $id) : $id;
-            //$collection[$id] = & $obj;
-            AuDatabase::$objects[ $schema->dbname ][ $schema->tblname ][$id] = & $obj;
-        }
-        return $obj;
     }
 
     public function get_state()
@@ -157,12 +139,23 @@ class AuLazyRow extends ArrayObject
 
     public function get_schema()
     {
-        return $this->_schema_;
+        return $this->factory()->schema;
     }
 
-    public function set_schema($schema)
+    public function set_factory($factory)
     {
-        return $this->_schema_ = $schema;
+        return $this->_factory_ = $factory;
+    }
+
+    public function factory($rowclass='', $setclass='')
+    {
+        if ( ! empty($rowclass) ) {
+            $this->_factory_->rowclass = $rowclass;
+        }
+        if ( ! empty($setclass) ) {
+            $this->_factory_->setclass = $setclass;
+        }
+        return $this->_factory_;
     }
 
     public function offsetGet($prop)
@@ -190,28 +183,23 @@ class AuLazyRow extends ArrayObject
         }
     }
 
-    public function get_ids()
+    public function get_id()
     {
-        $pkey_arr = $this->get_schema()->pkey_array;
-        $row = $this->getArrayCopy();
-        return slice_assoc($row, $pkey_arr);
+        $pkey_arr = $this->factory()->schema->pkey_array;
+        return slice_assoc((array)$obj, $pkey_arr);
     }
 
     public function get_changes()
     {
-        $pkey_arr = $this->get_schema()->pkey_array;
-        $row = $this->getArrayCopy();
-        foreach ($pkey_arr as $pk) {
-            unset( $row[$pk] );
-        }
-        return $row;
+        $pkey_arr = $this->factory()->schema->pkey_array;
+        return slice_assoc_reverse((array)$obj, $pkey_arr);
     }
 
     public function update($data)
     {
-        $pkey_arr = $this->get_schema()->pkey_array;
+        $pkey_arr = $this->factory()->schema->pkey_array;
         foreach ($data as $key => $val) {
-            if ( ! in_array($key, $pkey_arr) ) {
+            if ( ! in_array($key, $pkey_arr, true) ) {
                 $this->offsetSet($key, $val);
             }
         }
@@ -246,76 +234,35 @@ class AuLazyRow extends ArrayObject
  */
 class AuLazySet extends ArrayIterator
 {
-    protected $_schema_ = null;
-    protected $_rowclass_ = 'AuLazyRow';
+    protected $_factory_ = 'AuLazyRow';
 
-    public function __construct(array $data=array(), $schema=null)
+    public function __construct(array $data=array(), $factory=null)
     {
         parent::__construct($data);
-        $this->set_schema($schema);
-        if ( ! is_null($schema) ) {
-            $this->_rowclass_ = $schema->get_model('AuLazyRow');
+        if ( ! is_null($factory) ) {
+            $this->_factory_ = $factory;
         }
-    }
-
-    public function get_schema()
-    {
-        return $this->_schema_;
-    }
-
-    public function set_schema($schema)
-    {
-        return $this->_schema_ = $schema;
     }
 
     public function get_rowclass()
     {
-        return $this->_rowclass_;
+        return $this->_factory_->rowclass;
     }
 
     public function set_rowclass($rowclass)
     {
-        return $this->_rowclass_ = $rowclass;
+        $this->_factory_->rowclass = $rowclass;
     }
 
-    public function add_row($row, $index)
+    public function get_schema()
     {
-        $this->append($row);
-    }
-
-    public static function id_row($row, $index, & $result, $pkey='id')
-    {
-        $result->offsetSet($row[$pkey], $row);
-    }
-
-    public static function field_row($row, $index, & $result, $field, $single=false)
-    {
-        $key = $row[$field];
-        if ( $single === false ) {
-            $result->set_rowclass('AuLazySet');
-            if ( ! $result->offsetExists($key) ) {
-                $rowset = new AuLazySet(array(), $result->get_schema());
-                $rowset->set_rowclass('AuLazyRow');
-                $result->offsetSet($key, $rowset);
-            }
-            $result->offsetGet($key)->append($row);
-        }
-        else {
-            if ( ! $result->offsetExists($key) ) {
-                $result->offsetSet($key, $row);
-            }
-        }
+        return $this->_factory_->schema;
     }
 
     public function wrap_row($row=null)
     {
         if ($row) {
-            $rowclass = $this->get_rowclass();
-            if ($rowclass == 'AuLazyRow') {
-                $func = array($rowclass, 'wrap');
-                $obj = call_user_func($func, $row, $this->get_schema());
-                return $obj;
-            }
+            return $this->_factory_->wrap($row);
         }
         return $row;
     }

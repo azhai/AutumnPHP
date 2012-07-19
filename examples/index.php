@@ -10,6 +10,7 @@ echo "<br />\n";
 var_export($user->blogs->count());
 echo "<br />\n";
 
+$db->dump_all();
 $blog = $user->blogs[0];
 var_export($blog->author);
 echo "<br />\n";

@@ -27,14 +27,21 @@ class AuTemplate
         }
     }
 
-    public function extend($filename) { //模板继承
+    public function get_theme_file($filename, $theme='')
+    {
         $theme_dir = APPLICATION_ROOT . DS . 'themes';
-        if ( file_exists($theme_dir . DS . $this->theme . DS . $filename) ) {
-            $filename = $theme_dir . DS . $this->theme . DS . $filename;
+        $theme = empty($theme) ? $this->theme : $theme;
+        if ( file_exists($theme_dir . DS . $theme . DS . $filename) ) {
+            $filename = $theme_dir . DS . $theme . DS . $filename;
         }
         else {
             $filename = $theme_dir . DS . 'default' . DS . $filename;
         }
+        return $filename;
+    }
+
+    public function extend($filename) { //模板继承
+        $filename = $this->get_theme_file($filename);
         if (! in_array($filename, $this->tops)) {
             $this->filename = $filename;
         }
@@ -43,9 +50,11 @@ class AuTemplate
     public function widget() {
         $args = func_get_args();
         $widget_name = array_shift($args);
-        if ( function_exists($widget_name) ) {
+        $filename = $this->get_theme_file('widgets' . $widget_name . '.php');
+        if ( file_exists($filename) ) {
+            require_once($filename);
             ob_start();
-            call_user_func_array($widget_name, $args);
+            call_user_func_array('widget_' . $widget_name, $args);
             return ob_end_flush(); //输出HTML内容
         }
     }

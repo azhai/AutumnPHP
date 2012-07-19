@@ -1,41 +1,50 @@
 <?php
 defined('DS') or define('DS', DIRECTORY_SEPARATOR);
+defined('CONFIG_NAME') or define('CONFIG_NAME', 'config');
 defined('LIBRARY_DIR') or define('LIBRARY_DIR', dirname(__FILE__));
 defined('APPLICATION_ROOT') or define('APPLICATION_ROOT', dirname(LIBRARY_DIR));
 defined('RUNTIME_DIR') or define('RUNTIME_DIR', APPLICATION_ROOT . DS . 'runtime');
-defined('CONFIG_FILENAME') or define('CONFIG_FILENAME', APPLICATION_ROOT . DS . 'config.php');
 
 error_reporting(E_ALL & ~E_DEPRECATED);
 
 
+function app()
+{
+    static $app;
+    if ( is_null($app) ) {
+        $app = new AuApplication(CONFIG_NAME);
+    }
+    return $app;
+}
+
+
 function autoload($klass)
 {
-    static $builtins = array(
+    static $_builtins_ = array(
         'AuApplication' => 'core.php',
         'AuBehavior' => 'behavior.php',
         'AuBelongsTo' => 'behavior.php',
         'AuCache' => 'cache.php',
+        'AuCacheFile' => 'cache.php',
         'AuConfigure' => 'core.php',
-        'AuConnection' => 'database.php',
         'AuConstructor' => 'core.php',
+        'AuCurl' => 'request.php',
         'AuDatabase' => 'database.php',
-        'AuFetchObject' => 'behavior.php',
-        'AuFetchAll' => 'behavior.php',
+        'AuFactory' => 'database.php',
         'AuHasMany' => 'behavior.php',
         'AuHasOne' => 'behavior.php',
         'AuLazyRow' => 'model.php',
         'AuLazySet' => 'model.php',
         'AuLiteral' => 'database.php',
         'AuManyToMany' => 'behavior.php',
-        'AuOrganization' => 'behavior.php',
         'AuProcedure' => 'core.php',
         'AuQuery' => 'database.php',
         'AuRequest' => 'request.php',
         'AuSchema' => 'model.php',
         'AuTemplate' => 'template.php',
     );
-    if ( isset($builtins[$klass]) ) {
-        require_once(LIBRARY_DIR . DS . $builtins[$klass]);
+    if ( isset($_builtins_[$klass]) ) {
+        require_once(LIBRARY_DIR . DS . $_builtins_[$klass]);
     } else { //自动加载models下的类
         $filenames = glob(APPLICATION_ROOT . DS . 'models' . DS . '*.php');
         foreach ($filenames as $filename) {
@@ -51,40 +60,13 @@ function autoload($klass)
 spl_autoload_register('autoload');
 
 
-function app()
-{
-    static $app;
-    if ( is_null($app) ) {
-        $app = new AuApplication(CONFIG_FILENAME);
-    }
-    return $app;
-}
-
-
 /**
- * 将下划线分割的单词转为驼峰表示（首字母大写）
- * USAGE:
- *  php > echo camelize('hello_world');
- *  'HelloWorld'
+ * 当前PHP版本低于$ver
+ * @assert ('5.0.0') === false
  **/
-function camelize($underscored_word)
+function php_ver_lt($ver)
 {
-    $humanize_word = ucwords(str_replace('_', ' ', $underscored_word));
-    return str_replace(' ', '', $humanize_word);
-}
-
-
-/**
- * 从关联数组中取出键属于$keys的部分
- **/
-function slice_assoc($arr, $keys) {
-    $result = array();
-    foreach ($keys as $k) {
-        if ( isset($arr[$k]) ) {
-            $result[$k] = $arr[$k];
-        }
-    }
-    return $result;
+    return strnatcmp(phpversion() , $ver) < 0;
 }
 
 
@@ -121,33 +103,41 @@ function import($import_path)
 }
 
 
-function invoke_view($view_obj, $req) {
-    //当$view不存在$action动作时，执行默认的index动作，并将$action作为动作的第一个参数
-    if (! method_exists($view_obj, $req->action . 'Action')) {
-        array_unshift($req->args, $req->action);
-        $req->action = 'index';
-    }
-    //找出当前action对应哪些Filters
-    $filter_objects = array();
-    $filters = null;
-    if (method_exists($view_obj, 'filters')) {
-        $filters = $view_obj->filters($req->action);
-    }
-    $filters = empty($filters) ? array() : $filters;
-    //按顺序执行Filters的before检查，未通过跳转到404错误页面
-    foreach($filters as $filter) {
-        $construct = new AuConstructor(ucfirst($filter) . 'Filter', array(& $view_obj));
-        $filter_obj = $construct->emit();
-        if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
-            return $req->error(404);
+/**
+ * 将下划线分割的单词转为驼峰表示（首字母大写）
+ * @assert ('hello_world') == 'HelloWorld'
+ **/
+function camelize($underscored_word)
+{
+    $humanize_word = ucwords(str_replace('_', ' ', $underscored_word));
+    return str_replace(' ', '', $humanize_word);
+}
+
+
+/**
+ * 从关联数组中取出键属于$keys的部分
+ * @assert (array('a'=>1, 'b'=>2, 'c'=>3), array('c', 'a')) == array('c'=>3, 'a'=>1)
+ **/
+function slice_assoc($arr, $keys) {
+    $result = array();
+    foreach ($keys as $k) {
+        if ( isset($arr[$k]) ) {
+            $result[$k] = $arr[$k];
         }
-        array_push($filter_objects, $filter_obj);
     }
-    //执行action动作，再按逆序执行Filters的after包装，修改返回的结果$result
-    $result = call_user_func(array($view_obj, $req->action . 'Action'), & $req);
-    while ($filter_obj = array_pop($filter_objects)) {
-        if (method_exists($filter_obj, 'after')) {
-            $filter_obj->after(& $result);
+    return $result;
+}
+
+
+/**
+ * 从关联数组中取出键不属于$keys的部分
+ * @assert (array('a'=>1, 'b'=>2, 'c'=>3), array('c', 'a')) == array('b'=>2)
+ **/
+function slice_assoc_reverse($arr, $keys) {
+    $result = array();
+    foreach ($arr as $k => $v) {
+        if ( ! in_array($k, $keys, true) ) {
+            $result[$k] = $v;
         }
     }
     return $result;

@@ -4,6 +4,7 @@ defined('APPLICATION_ROOT') or die();
 
 class Users extends AuLazyRow
 {
+    protected $_virtuals_ = array('theme'=>'default');
     protected $_behaviors_ = array(
         'blogs' => array('AuHasMany', 'contents', 'authorId',
                             array('filter'=>"type='post'")),

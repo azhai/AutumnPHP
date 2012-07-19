@@ -5,90 +5,73 @@ defined('APPLICATION_ROOT') or die();
 /**
  * 缓存类
  **/
-class AuCache
+abstract class AuCacheBase
 {
-    private static $_instance_ = null;
-    protected static $_storage_ = array(); //对象注册表
-    public $backends = array();
-    public $namespaces = array('schema'); //允许的名称空间
+    const KEY_SEPERATOR = '.';
+    public $backend = null;
+    public $namespaces = '*'; //允许的名称空间
 
-    protected function __construct()
+    public function __construct(array $namespaces=null)
     {
+        if ( ! empty($namespaces) ) {
+            if ( is_array($this->namespaces) ) { //扩充
+                $this->namespaces = array_merge($this->namespaces, $namespaces);
+            }
+            else { //限制
+                $this->namespaces = $namespaces;
+            }
+        }
     }
 
-    public static function instance()
-    {
-        if ( is_null(self::$_instance_) ) {
-            self::$_instance_ = new AuCache();
-        }
-        return self::$_instance_;
-    }
+    abstract protected function _get($ns, $key, $default);
+    abstract protected function _put($ns, $key, $value, $ttl);
+    abstract protected function _delete($ns, $key);
+    abstract protected function _clean($ns=null);
 
-    public function __get($key)
+    public function key($ns, $key='')
     {
-        if ( array_key_exists($key, $this->backends) ) {
-            return $this->backends[$key];
-        }
-        $obj = $this;
-        switch ($key) {
-            case 'file':
-                $obj = new AuCacheFile(RUNTIME_DIR . DS . 'caches');
-                break;
-            case 'apc':
-                if ( extension_loaded('apc') && ini_get('apc.enabled') == '1' ) {
-                    $obj = new AuCacheApc();
-                }
-                break;
-            case 'memcached':
-                break;
-        }
-        $this->backends[$key] = $obj;
-        return $obj;
+        $ns = empty($ns) ? 'global' : $ns;
+        return $key === '' ? $ns : $ns . self::KEY_SEPERATOR . $key;
     }
 
     public function check($ns)
     {
-        if ( in_array($ns, $this->namespaces) ) {
+        if ('*' === $this->namespaces) {
             return true;
         }
-        else if ( strpos($ns, '.') !== false ) {
-            $ns = array_shift( explode('.', $ns) );
-            if ( in_array($ns, $this->namespaces) ) {
-                return true;
+        else if ( in_array($ns, $this->namespaces, true) ) {
+            return true;
+        }
+        else {
+            if ( strpos($ns, self::KEY_SEPERATOR) !== false ) {
+                $pre = array_shift( explode(self::KEY_SEPERATOR, $ns) );
+                if ( in_array($pre, $this->namespaces, true) ) {
+                    return true;
+                }
             }
         }
-    }
-
-    public function key($ns, $key)
-    {
-        return $ns . '.' . $key;
-    }
-
-    public function put($ns, $key, $value, $ttl=3600)
-    {
-        if ( ! array_key_exists($ns, self::$_storage_) ) {
-            self::$_storage_[$ns] = array();
-        }
-        self::$_storage_[$ns][$key] = array(
-            'value' => $value, 'expire' => is_null($ttl) ? null : time() + $ttl
-        );
+        return false;
     }
 
     public function get($ns, $key, $default=null)
     {
-        if ( array_key_exists($ns, self::$_storage_) ) {
-            if ( array_key_exists($key, self::$_storage_[$ns]) ) {
-                $cell = self::$_storage_[$ns][$key];
-                if ( ! isset($cell['expire']) || $cell['expire'] > time() ) {
-                    return $cell['value'];
-                }
-            }
-            self::$_storage_[$ns] = array();
+        $value = $this->_get($ns, $key);
+        if ( is_null($value) && ! is_null($this->backend) ) {
+            $value = $this->backend->get($ns, $key);
         }
-        return $default;
+        $value = is_null($value) ? $default : $value;
+        return $value;
     }
 
-    public function retrieve($ns, $key, $proc, $ttl=3600)
+    public function put($ns, $key, $value, $ttl=0)
+    {
+        if ( ! is_null($this->backend) ) {
+            $this->backend->put($ns, $key, $value, $ttl);
+        }
+        $this->_put($ns, $key, $value, $ttl);
+    }
+
+    public function retrieve($ns, $key, $proc, $ttl=0)
     {
         $value = $this->get($ns, $key);
         if ( is_null($value) ) { //不存在，尝试创建
@@ -102,6 +85,52 @@ class AuCache
 
     public function delete($ns, $key)
     {
+        if ( ! is_null($this->backend) ) {
+            $this->backend->delete($ns, $key);
+        }
+        $this->_delete($ns, $key);
+    }
+
+    public function clean($ns=null)
+    {
+        if ( ! is_null($this->backend) ) {
+            $this->backend->clean($ns);
+        }
+        $this->_clean($ns);
+    }
+}
+
+
+class AuCache extends AuCacheBase
+{
+    protected static $_storage_ = array(); //对象注册表
+
+    protected function _get($ns, $key, $default=null)
+    {
+        if ( array_key_exists($ns, self::$_storage_) ) {
+            if ( array_key_exists($key, self::$_storage_[$ns]) ) {
+                $cell = self::$_storage_[$ns][$key];
+                if ( ! isset($cell['expire']) || $cell['expire'] > time() ) {
+                    return $cell['value'];
+                }
+            }
+            self::$_storage_[$ns] = array();
+        }
+        return $default;
+    }
+
+    protected function _put($ns, $key, $value, $ttl=0)
+    {
+        if ( ! array_key_exists($ns, self::$_storage_) ) {
+            self::$_storage_[$ns] = array();
+        }
+        self::$_storage_[$ns][$key] = array(
+            'value' => $value, 'expire' => is_null($ttl) ? null : time() + $ttl
+        );
+    }
+
+    protected function _delete($ns, $key)
+    {
         if ( array_key_exists($ns, self::$_storage_) ) {
             if ( array_key_exists($key, self::$_storage_[$ns]) ) {
                 unset( self::$_storage_[$ns][$key] );
@@ -109,7 +138,7 @@ class AuCache
         }
     }
 
-    public function clean($ns=null)
+    protected function _clean($ns=null)
     {
         if ( is_null($ns) ) {
             self::$_storage_ = array();
@@ -121,162 +150,273 @@ class AuCache
 }
 
 
-class AuCacheFile extends AuCache
+class AuCacheFile extends AuCacheBase
 {
     public $cache_dir = '';
+    public $forever = false; //$forever === true时不将expire时间写入文件
+    public $file_mode = 0777;
 
-    protected function __construct($cache_dir)
+    public function __construct($cache_dir, array $namespaces=null,
+                                $forever=false, $file_mode=0777)
     {
         $this->cache_dir = $cache_dir;
+        $this->forever = $forever;
+        $this->file_mode = $file_mode;
+        parent::__construct($namespaces);
     }
 
-    public function put($ns, $key, $value, $ttl=3600)
+    protected function _read($filename)
     {
-        if ( $this->check($ns) ) {
-            $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
-            $cell = array(
-                'value' => $value, 'expire' => is_null($ttl) ? null : time() + $ttl
-            );
-            $content = "<?php \nreturn " . var_export($cell, true) . ";\n";
-            touch($filename);
-            chmod($filename, 0777);
-            file_put_contents($filename, $content, LOCK_EX);
-        }
-        parent::put($ns, $key, $value, $ttl);
+        return (include $filename);
     }
 
-    public function get($ns, $key, $default=null)
+    protected function _write($filename, $cell)
     {
-        $value = parent::get($ns, $key);
-        if ( is_null($value) ) {
-            $value = $default;
-            $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
-            if ( file_exists($filename) ) {
-                $cell = (include $filename);
-                if ( ! isset($cell['expire']) || $cell['expire'] > time() ) {
-                    $value = $cell['value'];
-                }
+        @touch($filename);
+        @chmod($filename, $this->file_mode);
+        $content = "<?php \nreturn " . var_export($cell, true) . ";\n";
+        file_put_contents($filename, $content, LOCK_EX);
+    }
+
+    protected function _get($ns, $key, $default=null)
+    {
+        $value = $default;
+        $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
+        if ( file_exists($filename) ) {
+            $cell = $this->_read($filename);
+            if ($this->forever === true) {
+                $value = $cell;
+            }
+            else if ( empty($cell['expire']) || $cell['expire'] > time() ) {
+                $value = $cell['value'];
             }
         }
         return $value;
     }
 
-    public function delete($ns, $key)
+    protected function _put($ns, $key, $value, $ttl=0)
+    {
+        if ( $this->check($ns) ) {
+            $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
+            if ($this->forever === true) {
+                $cell = $value;
+            }
+            else {
+                $cell = array(
+                    'expire' => $ttl === 0 ? 0 : time() + $ttl, 'value' => $value
+                );
+            }
+            $this->_write($filename, $cell);
+        }
+    }
+
+    protected function _delete($ns, $key)
     {
         $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
         if ( file_exists($filename) ) {
             unlink($filename);
         }
-        parent::delete($ns, $key);
     }
 
-    public function clean($ns=null)
+    protected function _clean($ns=null)
     {
         $ns = is_null($ns) ? '*' : $ns;
         $files = glob($this->cache_dir . DS . $this->key($ns, '*') . '.php');
         foreach ($files as $filename) {
             unlink($filename);
         }
-        parent::clean($ns);
     }
 }
 
 
-class AuCacheApc extends AuCache
+class AuCacheSerialize extends AuCacheFile
 {
-    public function put($ns, $key, $value, $ttl=3600)
+
+    protected function _read($filename)
     {
-        if ( $this->check($ns) ) {
-            apc_store($this->key($ns, $key), $value, $ttl);
-        }
-        parent::put($ns, $key, $value, $ttl);
+        return unserialize( file_get_contents($filename) );
     }
 
-    public function get($ns, $key, $default=null)
+    protected function _write($filename, $cell)
     {
-        $value = parent::get($ns, $key);
-        if ( is_null($value) ) {
-            $value = apc_fetch($this->key($ns, $key), $success);
-            if ( $success === false ) {
-                $value = $default;
-            }
+        @touch($filename);
+        @chmod($filename, $this->file_mode);
+        $content = serialize($cell);
+        file_put_contents($filename, $content, LOCK_EX);
+    }
+}
+
+
+class AuCacheApc extends AuCacheBase
+{
+    private $_active_ = false;
+
+    public function __construct(array $namespaces=null)
+    {
+        if ( extension_loaded('apc') && ini_get('apc.enabled') == '1' ) {
+            $this->_active_ = true;
+        }
+        parent::__construct($namespaces);
+    }
+
+    public function check($ns)
+    {
+        return $this->_active_ && parent::check($ns);
+    }
+
+    protected function _ns_exists($exists_key)
+    {
+        $exists = apc_fetch($exists_key, $success);
+        if ( $success === false ) {
+            $exists = array();
+        }
+        return $exists;
+    }
+
+    protected function _get($ns, $key, $default=null)
+    {
+        if ($this->_active_ === false) {
+            return $default;
+        }
+        $value = apc_fetch($this->key($ns, $key), $success);
+        if ( $success === false ) {
+            $value = $default;
         }
         return $value;
     }
 
-    public function delete($ns, $key)
+    protected function _put($ns, $key, $value, $ttl=0)
     {
-        apc_delete( $this->key($ns, $key) );
-        parent::delete($ns, $key);
+        if ( $this->check($ns) ) {
+            $exists_key = $this->key('__exists', $ns);
+            $exists = $this->_ns_exists($exists_key);
+            $exists[$key] = 1;
+            apc_store($exists_key, $exists);
+            apc_store($this->key($ns, $key), $value, $ttl);
+        }
     }
 
-    public function clean($ns=null)
+    protected function _delete($ns, $key)
     {
+        if ($this->_active_ === false) {
+            return;
+        }
+        apc_delete( $this->key($ns, $key) );
+    }
+
+    protected function _clean($ns=null)
+    {
+        if ($this->_active_ === false) {
+            return;
+        }
         if ( is_null($ns) ) {
             apc_clear_cache('user');
         }
-        else if ( array_key_exists($ns, self::$_storage_) ) {
-            foreach (self::$_storage_[$ns] as $key => $value) {
-                apc_delete( $this->key($ns, $key) );
+        else {
+            $exists_key = $this->key('__exists', $ns);
+            $exists = $this->_ns_exists($exists_key);
+            if ( ! empty($exists) ) {
+                foreach ($exists as $key => $bool) {
+                    apc_delete( $this->key($ns, $key) );
+                }
+                apc_delete($exists_key);
             }
         }
-        parent::clean($ns);
     }
 }
 
 
-class AuCacheMemcached extends AuCache
+class AuCacheMemcached extends AuCacheBase
 {
-    private $_conn; // Holds the memcached object
-    protected $_conf = array(
+    private $_conn_; // Holds the memcached object
+    protected $_configs_ = array(
         'default' => array(
-            'default_host'      => '127.0.0.1',
-            'default_port'      => 11211,
-            'default_weight'    => 1
+            'host'      => '127.0.0.1',
+            'port'      => 11211,
+            'weight'    => 1
         )
     );
 
-    public function put($ns, $key, $value, $ttl=3600)
+    public function __construct(array $configs=null, array $namespaces=null)
     {
-        if ( $this->check($ns) ) {
-            if (get_class($this->_conn) == 'Memcached') {
-                return $this->_conn->set($this->key($ns, $key), $value, $ttl);
-            }
-            else if (get_class($this->_conn) == 'Memcache') {
-                return $this->_conn->set($this->key($ns, $key), $value, 0, $ttl);
-            }
+        if ( ! empty($configs) ) {
+            $this->_configs_ = $configs;
         }
-        parent::put($ns, $key, $value, $ttl);
+        parent::__construct($namespaces);
     }
 
-    public function get($ns, $key, $default=null)
+    public function connect()
     {
-        $value = parent::get($ns, $key);
-        if ( is_null($value) ) {
-            $value = $this->_conn->get( $this->key($ns, $key) );
-            if ( is_null($value) || $value === false ) {
-                $value = $default;
+        if ( is_null($this->_conn_) && extension_loaded('memcached') ) {
+            $conn = new Memcached();
+            foreach ($this->_configs_ as $c) {
+                $conn->addServer($c['host'], $c['port'], $c['weight']);
             }
+            $this->_conn_ = $conn;
+        }
+        return $this->_conn_;
+    }
+
+    protected function _ns_exists($exists_key)
+    {
+        $exists = $conn->get($exists_key);
+        if ( is_null($exists) || $exists === false ) {
+            $exists = array();
+        }
+        return $exists;
+    }
+
+    protected function _get($ns, $key, $default=null)
+    {
+        if ( is_null($conn) ) {
+            return $default;
+        }
+        $value = $this->connect()->get( $this->key($ns, $key) );
+        if ( is_null($value) || $value === false ) {
+            $value = $default;
         }
         return $value;
     }
 
-    public function delete($ns, $key)
+    protected function _put($ns, $key, $value, $ttl=0)
     {
-        $this->_conn->delete( $this->key($ns, $key) );
-        parent::delete($ns, $key);
+        $conn = $this->connect();
+        if ( ! is_null($conn) && $this->check($ns) ) {
+            $exists_key = $this->key('__exists', $ns);
+            $exists = $this->_ns_exists($exists_key);
+            $exists[$key] = 1;
+            $conn->set($exists_key, $exists);
+            $nskey = $this->key($ns, $key);
+            $conn->set($nskey, $value, $ttl);
+        }
     }
 
-    public function clean($ns=null)
+    protected function _delete($ns, $key)
     {
-        if ( is_null($ns) ) {
-            $this->_conn->flush();
+        $conn = $this->connect();
+        if ( ! is_null($conn) ) {
+            $conn->delete( $this->key($ns, $key) );
         }
-        else if ( array_key_exists($ns, self::$_storage_) ) {
-            foreach (self::$_storage_[$ns] as $key => $value) {
-                $this->_conn->delete( $this->key($ns, $key) );
+    }
+
+    protected function _clean($ns=null)
+    {
+        $conn = $this->connect();
+        if ( is_null($conn) ) {
+            return;
+        }
+        if ( is_null($ns) ) {
+            $conn->flush();
+        }
+        else {
+            $exists_key = $this->key('__exists', $ns);
+            $exists = $this->_ns_exists($exists_key);
+            if ( ! empty($exists) ) {
+                foreach ($exists as $key => $bool) {
+                    $conn->delete( $this->key($ns, $key) );
+                }
+                $conn->delete($exists_key);
             }
         }
-        parent::clean($ns);
     }
 }

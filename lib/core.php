@@ -2,6 +2,39 @@
 defined('APPLICATION_ROOT') or die();
 
 
+function invoke_view($view_obj, $req) {
+    //当$view不存在$action动作时，执行默认的index动作，并将$action作为动作的第一个参数
+    if (! method_exists($view_obj, $req->action . 'Action')) {
+        array_unshift($req->args, $req->action);
+        $req->action = 'index';
+    }
+    //找出当前action对应哪些Filters
+    $filter_objects = array();
+    $filters = null;
+    if (method_exists($view_obj, 'filters')) {
+        $filters = $view_obj->filters($req->action);
+    }
+    $filters = empty($filters) ? array() : $filters;
+    //按顺序执行Filters的before检查，未通过跳转到404错误页面
+    foreach($filters as $filter) {
+        $construct = new AuConstructor(ucfirst($filter) . 'Filter', array(& $view_obj));
+        $filter_obj = $construct->emit();
+        if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
+            return $req->error(404);
+        }
+        array_push($filter_objects, $filter_obj);
+    }
+    //执行action动作，再按逆序执行Filters的after包装，修改返回的结果$result
+    $result = call_user_func(array($view_obj, $req->action . 'Action'), & $req);
+    while ($filter_obj = array_pop($filter_objects)) {
+        if (method_exists($filter_obj, 'after')) {
+            $filter_obj->after(& $result);
+        }
+    }
+    return $result;
+}
+
+
 class AuConfigure
 {
     protected $_data_ = array();        #数据
@@ -43,17 +76,24 @@ class AuProcedure
     public $method = '';
     public $args = array();
 
-    public function __construct($subject, $method, $args=array())
+    public function __construct($subject, $method, array $args=array())
     {
         $this->subject = $subject;
         $this->method = $method;
         $this->append_args($args);
     }
 
-    public function append_args($args)
+    public function append_args(array $args)
     {
         if ( ! empty($args) ) {
             $this->args = array_merge($this->args, $args);
+        }
+    }
+
+    public function prepend_args(array $args)
+    {
+        if ( ! empty($args) ) {
+            $this->args = array_merge($args, $this->args);
         }
     }
 
@@ -69,7 +109,13 @@ class AuProcedure
         return $this->_emit();
     }
 
-    public function emit_array($args)
+    public function emit_prepend()
+    {
+        $this->prepend_args( func_get_args() );
+        return $this->_emit();
+    }
+
+    public function emit_array(array $args)
     {
         $this->append_args($args);
         return $this->_emit();
@@ -82,7 +128,7 @@ class AuProcedure
  **/
 class AuConstructor extends AuProcedure
 {
-    public function __construct($subject, $args=array())
+    public function __construct($subject, array $args=array())
     {
         $this->subject = $subject;
         $this->method = '__construct';
@@ -107,27 +153,22 @@ class AuApplication
 {
     public $max_router_layer = 2; //view文件与目录最多两层
     public $routers = array();
-    private $configs = null;
-    private $logger = null;
-    private static $plugins = array();
+    private $_configs_ = null;
+    private static $_plugins_ = array();
 
-    public function __construct($config_filename=null, $logger_dirname=null)
+    public function __construct($config_name='config', $logger_dirname=null)
     {
-        $this->get_configs($config_filename);
+        $this->get_configs($config_name);
     }
 
-    public function get_configs($config_filename)
+    public function get_configs($config_name)
     {
         define('AUTUMN_ODU4MTE3NTYX', 1);
         //加载配置文件
-        if ( is_null($config_filename) ) {
-            $config_filename = APPLICATION_ROOT . DS . 'config.php';
-        }
-        if ( file_exists($config_filename) && is_file($config_filename) ) {
-            $this->configs = new AuConfigure(include $config_filename);
-        }
+        $cache = new AuCacheFile(APPLICATION_ROOT, array($config_name), true, 0755);
+        $this->_configs_ = new AuConfigure( $cache->get($config_name, '', array()) );
         //加载配置文件，将basic段的配置加载为实例的属性
-        $basic_configs = empty($this->configs->basic) ? array() : $this->configs->basic;
+        $basic_configs = empty($this->_configs_->basic) ? array() : $this->_configs_->basic;
         foreach ($basic_configs as $key=>$value) {
             if ($key != 'configs') { //防止覆盖了配置文件本身
                 $this->$key = $value;
@@ -137,7 +178,35 @@ class AuApplication
 
     public function get_scopes()
     {
-        return isset($this->configs->scopes) ? $this->configs->scopes : array();
+        return isset($this->_configs_->scopes) ? $this->_configs_->scopes : array();
+    }
+
+    public function cache()
+    {
+        if (func_num_args() == 0) {
+            return new AuCache();
+        }
+        import('lib/cache.php');
+        $names = func_get_args();
+        foreach ($names as $name) {
+            if ( empty($name) ) {
+                $obj = new AuCache();
+            }
+            else {
+                @list($type, $key) = explode('.', $name);
+                $key = empty($key) ? 'default' : $key;
+                $cache_type = 'cache_' . $type;
+                $obj = $this->$cache_type($key);
+            }
+
+            if ( isset($chain) ) {
+                $chain->backend = $obj;
+            }
+            else {
+                $chain = $obj;
+            }
+        }
+        return $chain;
     }
 
     public function log($var='', $level=null)
@@ -151,34 +220,40 @@ class AuApplication
     }
 
     /*加载插件*/
+    public function load($class, $key='default', $items=array(), $args=array())
+    {
+        if ( isset($items['import']) ) {
+            import( $items['import'] );
+        }
+        $item_args = isset($items[$key]) ? $items[$key] : array();
+        if ( isset($items['staticmethod']) ) {
+            $constructor = new AuProcedure($class, $items['staticmethod'], $item_args);
+        }
+        else {
+            $constructor = new AuConstructor($class, $item_args);
+        }
+        $obj = call_user_func_array(array($constructor, 'emit'), $args);
+        if ( method_exists($obj, 'set_config_name') ) {
+            $obj->set_config_name($key);
+        }
+        return $obj;
+    }
+
     public function __call($name, $args)
     {
         $key = empty($args) ? 'default' : array_shift($args);
-        if ( ! array_key_exists($name, self::$plugins) ) {
-            self::$plugins[$name] = array();
+        if ( ! array_key_exists($name, self::$_plugins_) ) {
+            self::$_plugins_[$name] = array();
         }
-        else if ( array_key_exists($key, self::$plugins[$name]) ) {
-            return self::$plugins[$name][$key];
+        else if ( array_key_exists($key, self::$_plugins_[$name]) ) {
+            return self::$_plugins_[$name][$key];
         }
 
-        $items = $this->configs->$name;
+        $items = $this->_configs_->$name;
         if ( ! empty($items) ) {
-            if ( isset($items['import']) ) {
-                import( $items['import'] );
-            }
             $class = isset($items['class']) ? $items['class'] : ucfirst($name);
-            $item_args = isset($items[$key]) ? $items[$key] : array();
-            if ( isset($items['staticmethod']) ) {
-                $constructor = new AuProcedure($class, $items['staticmethod'], $item_args);
-            }
-            else {
-                $constructor = new AuConstructor($class, $item_args);
-            }
-            $obj = call_user_func_array(array($constructor, 'emit'), $args);
-            if ( method_exists($obj, 'set_config_name') ) {
-                $obj->set_config_name($key);
-            }
-            self::$plugins[$name][$key] = $obj;
+            $obj = $this->load($class, $key, $items, $args);
+            self::$_plugins_[$name][$key] = $obj;
             return $obj;
         }
     }
