@@ -15,7 +15,7 @@ class AuSchema extends AuConfigure
     public $dbname = 'default';
     public $tblname = '';
 
-    public function __construct($tblname, $dbname='default', $desc=array())
+    protected function __construct($tblname, $dbname='default', $desc=array())
     {
         $this->tblname = $tblname;
         $this->dbname = $dbname;
@@ -35,7 +35,12 @@ class AuSchema extends AuConfigure
             $models = self::describe_models($dbname, array_keys($structs));
             if ( array_key_exists($tblname, $structs) ) {
                 $desc = $structs[$tblname];
-                $desc['model'] = isset( $models[$tblname] ) ? $models[$tblname] : '';
+                if ( isset( $models[$dbname][$tblname] ) ) {
+                    $desc['model'] = $models[$dbname][$tblname];
+                }
+                else {
+                    $desc['model'] = '';
+                }
             }
             else {
                 $desc = array('table' => $db->prefix . $tblname);
@@ -80,16 +85,17 @@ class AuSchema extends AuConfigure
     public static function describe_models($dbname, $tblnames)
     {
         $cache = app()->cache('', 'file');
-        $models = $cache->get('schema.model', $dbname, array());
-        if ( empty($models) ) {
-            import('libs.models.*');
+        $models = $cache->get('schema', 'model', array());
+        if ( ! isset($models[$dbname]) ) {
+            $models[$dbname] = array();
+            import(MODEL_DIR_NAME . '.*');
             foreach ($tblnames as $tblname) {
                 $model = camelize($tblname);
                 if ( class_exists($model) && is_subclass_of($model, 'ArrayObject') ) {
-                    $models[$tblname] = $model;
+                    $models[$dbname][$tblname] = $model;
                 }
             }
-            $cache->put('schema.model', $dbname, $models);
+            $cache->put('schema', 'model', $models);
         }
         return $models;
     }
@@ -129,12 +135,12 @@ class AuLazyRow extends ArrayObject
 
     public function get_state()
     {
-        return $this->_state_;
+        return $this->offsetGet('_state_');
     }
 
     public function set_state($state='')
     {
-        return $this->_state_ = $state;
+        parent::offsetSet('_state_', $state);
     }
 
     public function get_schema()
@@ -144,18 +150,18 @@ class AuLazyRow extends ArrayObject
 
     public function set_factory($factory)
     {
-        return $this->_factory_ = $factory;
+        parent::offsetSet('_factory_', $factory);
     }
 
     public function factory($rowclass='', $setclass='')
     {
         if ( ! empty($rowclass) ) {
-            $this->_factory_->rowclass = $rowclass;
+            $this->offsetGet('_factory_')->rowclass = $rowclass;
         }
         if ( ! empty($setclass) ) {
-            $this->_factory_->setclass = $setclass;
+            $this->offsetGet('_factory_')->setclass = $setclass;
         }
-        return $this->_factory_;
+        return $this->offsetGet('_factory_');
     }
 
     public function offsetGet($prop)
@@ -186,13 +192,13 @@ class AuLazyRow extends ArrayObject
     public function get_id()
     {
         $pkey_arr = $this->factory()->schema->pkey_array;
-        return slice_assoc((array)$obj, $pkey_arr);
+        return slice_within($this->getArrayCopy(), $pkey_arr);
     }
 
     public function get_changes()
     {
         $pkey_arr = $this->factory()->schema->pkey_array;
-        return slice_assoc_reverse((array)$obj, $pkey_arr);
+        return slice_without($this->getArrayCopy(), $pkey_arr);
     }
 
     public function update($data)
@@ -276,7 +282,8 @@ class AuLazySet extends ArrayIterator
     public function offsetGet($index)
     {
         $row = $this->offsetExists($index) ? parent::offsetGet($index) : null;
-        return $this->wrap_row($row);
+        $obj = $this->wrap_row($row);
+        return $obj;
     }
 
     public function options($val='id', $text='name', $blank=false)

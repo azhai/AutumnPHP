@@ -1,7 +1,4 @@
 <?php
-defined('APPLICATION_ROOT') or define('APPLICATION_ROOT', dirname(__FILE__));
-require_once(APPLICATION_ROOT . '/lib/common.php');
+require_once('lib/common.php');
 app()->run();
-echo "-----------------------------------------------------------------------<br />\n";
-app()->db()->dump_all();
-?>
+app()->debug( app()->db()->dump_all(true) );

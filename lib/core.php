@@ -40,11 +40,17 @@ class AuConfigure
     protected $_data_ = array();        #数据
     protected $_defaults_ = array();    #默认数据
 
-    public function __construct(array $data=null)
+    protected function __construct(array $data=null)
     {
         if (! empty($data)) {
             $this->_data_ = $data;
         }
+    }
+
+    public static function instance(array $data=null)
+    {
+        $obj = new AuConfigure($data);
+        return $obj;
     }
 
     public function __isset($prop)
@@ -151,26 +157,24 @@ class AuConstructor extends AuProcedure
 
 class AuApplication
 {
+    private $_cache_ = null;
+    private $_configs_ = null;
     public $max_router_layer = 2; //view文件与目录最多两层
     public $routers = array();
-    private $_configs_ = null;
     private static $_plugins_ = array();
 
-    public function __construct($config_name='config', $logger_dirname=null)
-    {
-        $this->get_configs($config_name);
-    }
-
-    public function get_configs($config_name)
+    public function __construct($config_name)
     {
         define('AUTUMN_ODU4MTE3NTYX', 1);
+        $this->_cache_ = new AuCache();
         //加载配置文件
-        $cache = new AuCacheFile(APPLICATION_ROOT, array($config_name), true, 0755);
-        $this->_configs_ = new AuConfigure( $cache->get($config_name, '', array()) );
+        $config_cache = new AuCacheFile(APPLICATION_ROOT, array($config_name), true, 0755);
+        $configs = $config_cache->get($config_name, '', array());
+        $this->_configs_ = AuConfigure::instance( IN_CAKEPHP ? get_cakephp_dbs($configs) : $configs );
         //加载配置文件，将basic段的配置加载为实例的属性
         $basic_configs = empty($this->_configs_->basic) ? array() : $this->_configs_->basic;
         foreach ($basic_configs as $key=>$value) {
-            if ($key != 'configs') { //防止覆盖了配置文件本身
+            if ($key != '_configs_') { //防止覆盖了配置文件本身
                 $this->$key = $value;
             }
         }
@@ -181,22 +185,41 @@ class AuApplication
         return isset($this->_configs_->scopes) ? $this->_configs_->scopes : array();
     }
 
+    public function log($var='', $level=null)
+    {
+        $logger = $this->logging(); #先将KLogger类载入
+        if ( is_null($level) ) {
+            $level = KLogger::INFO;
+        }
+        //$var = is_object($var) ? get_object_vars($var) : $var;
+        $var = is_string($var) ? $var : strval($var);
+        $logger->log($var, $level);
+    }
+
+    public function debug($var='', $level=null)
+    {
+        $debuger = $this->debuger(); #先将ChromePhp类载入
+        if ( is_null($level) ) {
+            $level = ChromePhp::LOG;
+        }
+        $var = is_scalar($var) ? strval($var) : var_export($var, true);
+        call_user_func(array($debuger, 'log'), $var);
+    }
+
     public function cache()
     {
         if (func_num_args() == 0) {
             return new AuCache();
         }
         import('lib/cache.php');
-        $names = func_get_args();
-        foreach ($names as $name) {
-            if ( empty($name) ) {
+        $keys = func_get_args();
+        foreach ($keys as $key) {
+            if ( empty($key) ) {
                 $obj = new AuCache();
             }
             else {
-                @list($type, $key) = explode('.', $name);
-                $key = empty($key) ? 'default' : $key;
-                $cache_type = 'cache_' . $type;
-                $obj = $this->$cache_type($key);
+                $items = $this->_configs_->cache[$key];
+                $obj = $this->load($items['class'], $key, $items);
             }
 
             if ( isset($chain) ) {
@@ -209,30 +232,28 @@ class AuApplication
         return $chain;
     }
 
-    public function log($var='', $level=null)
-    {
-        $logger = $this->logging(); #先将KLogger类载入
-        if ( is_null($level) ) {
-            $level = KLogger::INFO;
-        }
-        $var = is_scalar($var) ? strval($var) : var_export($var, true);
-        $logger->log($var, $level);
-    }
-
     /*加载插件*/
     public function load($class, $key='default', $items=array(), $args=array())
     {
         if ( isset($items['import']) ) {
             import( $items['import'] );
         }
-        $item_args = isset($items[$key]) ? $items[$key] : array();
+        if ( isset($items[$key]) ) {
+            $item_args = $items[$key];
+        }
+        else if ( isset($items['args']) ) {
+            $item_args = $items['args'];
+        }
+        else {
+            $item_args = array();
+        }
         if ( isset($items['staticmethod']) ) {
             $constructor = new AuProcedure($class, $items['staticmethod'], $item_args);
         }
         else {
             $constructor = new AuConstructor($class, $item_args);
         }
-        $obj = call_user_func_array(array($constructor, 'emit'), $args);
+        $obj = $constructor->emit_array($args);
         if ( method_exists($obj, 'set_config_name') ) {
             $obj->set_config_name($key);
         }
@@ -242,20 +263,16 @@ class AuApplication
     public function __call($name, $args)
     {
         $key = empty($args) ? 'default' : array_shift($args);
-        if ( ! array_key_exists($name, self::$_plugins_) ) {
-            self::$_plugins_[$name] = array();
+        $obj = $this->_cache_->get('plugin', $name);
+        if ( is_null($obj) ) {
+            $items = $this->_configs_->$name;
+            if ( ! empty($items) ) {
+                $class = isset($items['class']) ? $items['class'] : ucfirst($name);
+                $obj = $this->load($class, $key, $items, $args);
+                $this->_cache_->put('plugin', $name, $obj);
+            }
         }
-        else if ( array_key_exists($key, self::$_plugins_[$name]) ) {
-            return self::$_plugins_[$name][$key];
-        }
-
-        $items = $this->_configs_->$name;
-        if ( ! empty($items) ) {
-            $class = isset($items['class']) ? $items['class'] : ucfirst($name);
-            $obj = $this->load($class, $key, $items, $args);
-            self::$_plugins_[$name][$key] = $obj;
-            return $obj;
-        }
+        return $obj;
     }
 
     public function run() {

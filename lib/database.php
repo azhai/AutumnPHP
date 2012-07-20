@@ -234,6 +234,17 @@ class AuQuery
         return ltrim($sql);
     }
 
+    public function reset()
+    {
+        $this->conds = array();
+        $this->or_conds = array();
+        $this->params = array();
+        $this->orders = array();
+        $this->groups = array();
+        $this->withes = array();
+        return $this;
+    }
+
     public function update($data)
     {
         $mask = "";
@@ -367,6 +378,7 @@ class AuQuery
             $obj = $this->get($id);
             if ( is_null($obj) ) { //创建一个新的
                 $obj = $this->create();
+                app()->debug($obj);
             }
         }
         foreach ($withes as $with) {
@@ -379,11 +391,11 @@ class AuQuery
     {
         $pkey_vals = $obj->get_id();
         $data = $obj->get_changes();
-        if ( $obj->get_state() == 'NEWBIE' ) {
+        if ( $obj instanceof AuLazyRow && $obj->get_state() == 'NEWBIE' ) {
             $id = $this->insert($data);
         }
         else if ( ! empty($pkey_vals) ) {
-            $result = $this->filter_by($pkey_vals)->update($data);
+            $result = $this->reset()->filter_by($pkey_vals)->update($data);
             $id = implode(':', array_values($pkey_vals));
         }
         $this->factory->objects->put($this->name, $id, $obj);
@@ -394,7 +406,7 @@ class AuQuery
     {
         $pkey_vals = $obj->get_id();
         if ( ! empty($pkey_vals) ) {
-            $this->filter_by($pkey_vals)->delete();
+            $this->reset()->filter_by($pkey_vals)->delete();
             $id = implode(':', array_values($pkey_vals));
             $this->factory->objects->delete($this->name, $id);
         }
@@ -549,7 +561,7 @@ class AuFactory
         }
         else if ( ! is_scalar($obj) ) {
             $pkey_arr = $this->schema->pkey_array;
-            $id = slice_assoc((array)$obj, $pkey_arr);
+            $id = slice_within((array)$obj, $pkey_arr);
         }
         else {
             $id = $obj;
@@ -570,14 +582,19 @@ class AuFactory
         else {
             $obj = $this->objects->retrieve($this->name, $id, $proc);
         }
-        if ( ! is_null($obj) && $obj->state == 'DELETED' ) {
-            $this->objects->delete($this->name, $id);
-            $obj = null;
+        if ( ! is_null($obj) && $obj instanceof AuLazyRow ) {
+            if ( $obj->get_state() == 'DELETED' ) {
+                $this->objects->delete($this->name, $id);
+                $obj = null;
+            }
         }
         return $obj;
     }
 
-    public function create(array $row=array()) {
+    public function create($row=array()) {
+        if ( $row instanceof ArrayObject ) {
+            return $row;
+        }
         $row = empty($row) ? $this->schema->defaults : $row;
         $model = $this->schema->get_model( $this->rowclass );
         $constructor = new AuConstructor($model, array($row));
@@ -589,11 +606,17 @@ class AuFactory
         return $obj;
     }
 
-    public function wrap(array $row)
+    public function wrap($row)
     {
+        if ( $row instanceof ArrayObject ) {
+            return $row;
+        }
         $model = $this->schema->get_model( $this->rowclass );
         $proc = new AuProcedure($this, 'create', array($row));
         $obj = $this->get_object($this->to_id($row), $proc);
+        if ( $obj instanceof AuLazyRow ) {
+            $obj->set_state('');
+        }
         return $obj;
     }
 
@@ -628,7 +651,7 @@ class AuFactory
         }
     }
 
-    public function fetch_with($stmt, $unique=false)
+    public function fetch_group($stmt, $unique=false)
     {
         if ( $unique ) {
             $mode = PDO::FETCH_ASSOC | PDO::FETCH_GROUP | PDO::FETCH_UNIQUE;
@@ -649,7 +672,7 @@ class AuFactory
         else {
             $fields = sprintf('%s, %s', $key, $fields);
         }
-        $fetch = new AuProcedure($this, 'fetch_with', array($unique));
+        $fetch = new AuProcedure($this, 'fetch_group', array($unique));
         $rows = $query->select($fields, $fetch, $limit_params);
         return new AuLazySet($rows, $this);
     }
@@ -673,6 +696,7 @@ class AuFactory
             foreach ($primary as $i => $pri) {
                 $fval = $pri->$foreign;
                 $pri->offsetSet($prop, $result[$fval]);
+                $primary->offsetSet($i, $pri);
             }
         }
         else if ($behavior == 'AuHasOne' || $behavior == 'AuHasMany') {
@@ -683,6 +707,7 @@ class AuFactory
                     $rel_result = $rel_result ? $rel_result : array();
                 }
                 $pri->offsetSet($prop, $rel_result);
+                $primary->offsetSet($i, $pri);
             }
         }
         return $primary;

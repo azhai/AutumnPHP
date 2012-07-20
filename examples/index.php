@@ -1,5 +1,5 @@
 <?php
-require_once(dirname(__FILE__) . '/../lib/common.php');
+require_once('../lib/common.php');
 
 $db = app()->db();
 
@@ -24,5 +24,5 @@ $comments = $blogs[0]->comments;
 var_export($comments);
 echo "<br />\n";
 echo "<br />\n";
-echo "-----------------------------------------------------------------------<br />\n";
-$db->dump_all();
+
+app()->debug( app()->db()->dump_all(true) );

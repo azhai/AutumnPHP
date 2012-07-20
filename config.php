@@ -13,10 +13,15 @@ return array(
     ),
     'scopes' => array(
     ),
-    'cache_file' => array(
-        'class' => 'AuCacheFile',
-        'default' => array(RUNTIME_DIR . DS . 'caches', array('schema'), true),
-        'fragment' => array(RUNTIME_DIR . DS . 'fragments', array('block', 'widget')),
+    'cache' => array(
+        'file' => array(
+            'class' => 'AuCacheFile',
+            'args' => array(RUNTIME_DIR . DS . 'caches', array('schema'), true),
+        ),
+        'fragment' => array(
+            'class' => 'AuCacheFile',
+            'args' => array(RUNTIME_DIR . DS . 'fragments', array('block', 'widget')),
+        ),
     ),
     'logging' => array(
         'import' => 'plugins' . DS . 'klogger.php',
@@ -24,5 +29,11 @@ return array(
         'staticmethod' => 'instance',
         'default' => array(RUNTIME_DIR . DS . 'logs'),
     ),
+    'debuger' => array(
+        #在Chrome浏览器上安装ChromePhp插件，到Chrome开发人员工具/Console/All中查看
+        'import' => 'plugins' . DS . 'chromephp.php',
+        'class' => 'ChromePhp',
+        'staticmethod' => 'getInstance',
+        'default' => array(),
+    ),
 );
-
