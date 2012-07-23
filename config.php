@@ -1,5 +1,5 @@
 <?php
-defined('AUTUMN_ODU4MTE3NTYX') or die();
+defined('APPLICATION_ROOT') or die();
 
 return array(
     'basic' => array(
@@ -22,18 +22,5 @@ return array(
             'class' => 'AuCacheFile',
             'args' => array(RUNTIME_DIR . DS . 'fragments', array('block', 'widget')),
         ),
-    ),
-    'logging' => array(
-        'import' => 'plugins' . DS . 'klogger.php',
-        'class' => 'KLogger',
-        'staticmethod' => 'instance',
-        'default' => array(RUNTIME_DIR . DS . 'logs'),
-    ),
-    'debuger' => array(
-        #在Chrome浏览器上安装ChromePhp插件，到Chrome开发人员工具/Console/All中查看
-        'import' => 'plugins' . DS . 'chromephp.php',
-        'class' => 'ChromePhp',
-        'staticmethod' => 'getInstance',
-        'default' => array(),
     ),
 );

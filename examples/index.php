@@ -1,8 +1,9 @@
 <?php
-require_once('../lib/common.php');
+require_once('../lib/core.php');
 
 $db = app()->db();
 
+ob_start();
 $user = $db->factory("users")->get(1);
 var_export($user);
 echo "<br />\n";
@@ -26,3 +27,4 @@ echo "<br />\n";
 echo "<br />\n";
 
 app()->debug( app()->db()->dump_all(true) );
+ob_end_flush();

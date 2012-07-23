@@ -2,175 +2,118 @@
 defined('APPLICATION_ROOT') or die();
 
 
-class AuLiteral
-{
-    public $text = '';
-
-    public function __construct($text)
-    {
-        $this->text = $text;
-    }
-
-    public function __toString()
-    {
-        return $this->text;
-    }
-}
-
-
 /**
- * 使用PDO的数据库连接
- */
-class AuDatabase
+ * 数据表的描述
+ **/
+class AuSchema extends AuConfigure
 {
+    protected static $_pool_ = null;
+    protected $_defaults_ = array(
+        'table'=>'', 'pkey_array'=>array('id'),
+        'types'=>array(), 'defaults'=>array()
+    );
     public $dbname = 'default';
-    private $conn = null;
-    private $dsn = '';
-    private $user = '';
-    private $password = '';
-    public $prefix = '';
-    public static $sql_history = array();
+    public $tblname = '';
 
-    public function __construct($dsn, $user='', $password='', $prefix='')
+    protected function __construct($tblname, $dbname='default', $desc=array())
     {
-        $this->dsn = $dsn;
-        $this->user = $user;
-        $this->password = $password;
-        $this->prefix = $prefix;
+        $this->tblname = $tblname;
+        $this->dbname = $dbname;
+        parent::__construct($desc);
     }
 
-    public function set_config_name($key) {
-        $this->dbname = $key;
-    }
-
-    /*连接数据库*/
-    public function connect()
+    public static function instance($tblname, $dbname='default')
     {
-        if ( is_null($this->conn) ) {
-            $opts = array(
-                PDO::ATTR_PERSISTENT => false,
-                //PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, //错误模式，默认PDO::ERRMODE_SILENT
-                PDO::ATTR_ORACLE_NULLS => PDO::NULL_TO_STRING, //将空值转为空字符串
-            );
-            try {
-                $conn = new PDO($this->dsn, $this->user, $this->password, $opts);
-            }
-            catch (PDOException $e) {
-                trigger_error("DB connect failed:" . $e->getMessage(), E_USER_ERROR);
-            }
-
-            if ( strtolower(substr($this->dsn, 0, 6)) == 'mysql:' ) {
-                try {
-                    $conn->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true); //使用MySQL查询缓冲
-                    $conn->exec("SET NAMES 'UTF8'; SET TIME_ZONE = '+8:00'");
+        if ( is_null(self::$_pool_) ) {
+            self::$_pool_ = app()->cache();
+        }
+        $ns = 'schema.db.' . $dbname;
+        $obj = self::$_pool_->get($ns, $tblname);
+        if ( is_null($obj) ) {
+            $db = app()->db($dbname);
+            $structs = self::describe_structs($dbname, $db);
+            $models = self::describe_models($dbname, array_keys($structs));
+            if ( array_key_exists($tblname, $structs) ) {
+                $desc = $structs[$tblname];
+                if ( isset( $models[$dbname][$tblname] ) ) {
+                    $desc['model'] = $models[$dbname][$tblname];
                 }
-                catch (PDOException $e) {
+                else {
+                    $desc['model'] = '';
                 }
-            }
-            $this->conn = $conn;
-        }
-        return $this->conn;
-    }
-
-    public function quote($args)
-    {
-        if ( is_array($args) ) {
-            return array_map(array($this, 'quote'), $args);
-        }
-        else if ( $args instanceof AuLiteral ) {
-            return $args->text;
-        }
-        else {
-            $conn = $this->connect();
-            return $conn->quote($args, PDO::PARAM_STR);
-        }
-    }
-
-    /*执行修改操作*/
-    public function execute($sql, $args=array(), $insert_id=false)
-    {
-        $result = true;
-        $conn = $this->connect();
-        $sql = $this->dump($sql, $args);
-        self::$sql_history []= array($sql, array());
-        try {
-            $conn->beginTransaction();
-            $conn->exec($sql);
-            if ($insert_id) { //Should use lastInsertId BEFORE you commit
-                $result = $conn->lastInsertId();
-            }
-            $conn->commit();
-        } catch(PDOException $e) {
-            $conn->rollBack();
-            trigger_error("DB execute failed:" . $e->getMessage(), E_USER_ERROR);
-        }
-        return $result;
-    }
-
-    /*执行查询操作*/
-    public function query($sql, $args=array(), $fetch='all')
-    {
-        $conn = $this->connect();
-        self::$sql_history []= array($sql, $args);
-        $stmt = $conn->prepare($sql);
-        $stmt->execute($args);
-        try {
-            if ( empty($fetch) || $fetch == 'all' ) {
-                $result = $stmt->fetchAll( PDO::FETCH_ASSOC );
-            }
-            else if ( $fetch == 'one' ) {
-                $result = $stmt->fetch( PDO::FETCH_ASSOC );
-            }
-            else if ( $fetch == 'column' ) {
-                $result = $stmt->fetchColumn();
             }
             else {
-                $result = $fetch->emit_prepend($stmt);
+                $desc = array('table' => $db->prefix . $tblname);
             }
-        } catch(PDOException $e) {
-            trigger_error("DB query failed:" . $e->getMessage(), E_USER_ERROR);
+            $obj = new AuSchema($tblname, $dbname, $desc);
+            self::$_pool_->put($ns, $tblname, $obj);
         }
-        $stmt->closeCursor();
-        return $result;
-    }
-
-    /*生成可打印的SQL语句*/
-    public function dump($sql, $args=array())
-    {
-        if (strpos($sql, "%")) {
-            $sql = str_replace("%%", "%", $sql);
-            $sql = str_replace("%", "%%", $sql);
-        }
-        $sql = str_replace("?", "%s", $sql);
-        return vsprintf($sql, $this->quote($args));
-    }
-
-    public function dump_all($return=false)
-    {
-        @ob_start();
-        foreach (self::$sql_history as $i => $line) {
-            list($sql, $args) = $line;
-            echo ($i + 1) . ": ";
-            echo empty($args) ? $sql : $this->dump($sql, $args);
-            echo "; <br />\n";
-        }
-        return $return ? ob_get_clean() : ob_end_flush();
-    }
-
-    public function log_all()
-    {
-        app()->log( $this->dump_all(true) );
-    }
-
-    public function factory($tblname, $schema=null, $rowclass='Object', $setclass='Array')
-    {
-        if ( is_null($schema) ) {
-            $schema = AuSchema::instance($tblname, $this->dbname);
-        }
-        $obj = new AuQuery($this, $schema->table, $schema->get_pkey());
-        $obj->factory = AuFactory::instance($schema, $rowclass, $setclass);
         return $obj;
+    }
+
+    public function get_model($default='AuLazyRow')
+    {
+        return empty($this->model) ? $default : $this->model;
+    }
+
+    public function get_pkey()
+    {
+        $pkey_arr = $this->pkey_array;
+        $pkey = count($pkey_arr) <= 1 ? implode('', $pkey_arr) : $pkey_arr;
+        return $pkey;
+    }
+
+    public static function describe_structs($dbname, $db)
+    {
+        $cache = app()->cache('', 'file');
+        $structs = $cache->get('schema.struct', $dbname, array());
+        if ( empty($structs) ) {
+            $prefix = str_replace('_', '\_', $db->prefix);
+            $strip_lenth = empty($prefix) ? 0 : strlen($prefix) - 1;
+            $sql = "SHOW TABLES LIKE '" . $prefix . "%'";
+            $tables = array_map('array_pop', $db->query($sql));
+
+            foreach ($tables as $table) {
+                $tblname = strtolower( substr($table, $strip_lenth) );
+                $structs[$tblname] = self::parse_table($table, $db);
+            }
+            $cache->put('schema.struct', $dbname, $structs);
+        }
+        return $structs;
+    }
+
+    public static function describe_models($dbname, $tblnames)
+    {
+        $cache = app()->cache('', 'file');
+        $models = $cache->get('schema', 'model', array());
+        if ( ! isset($models[$dbname]) ) {
+            $models[$dbname] = array();
+            import(MODEL_DIR_NAME . '.*');
+            foreach ($tblnames as $tblname) {
+                $model = camelize($tblname);
+                if ( class_exists($model) && is_subclass_of($model, 'ArrayObject') ) {
+                    $models[$dbname][$tblname] = $model;
+                }
+            }
+            $cache->put('schema', 'model', $models);
+        }
+        return $models;
+    }
+
+    public static function parse_table($table, $db) {
+        $pkey_array = array();
+        $types = array();
+        $defaults = array();
+        $result = $db->query("SHOW COLUMNS FROM `" . $table ."`");
+        foreach ($result as $field) {
+            if ( $field['Key'] == 'PRI') {
+                array_push($pkey_array, $field['Field']);
+            }
+            $types[ $field['Field'] ] = $field['Type'];
+            $defaults[ $field['Field'] ] = $field['Default'];
+        }
+        return array('table'=>$table, 'pkey_array'=>$pkey_array,
+                     'types'=>$types, 'defaults'=>$defaults);
     }
 }
 

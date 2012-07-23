@@ -1,73 +1,127 @@
 <?php
-defined('APPLICATION_ROOT') or die();
+require_once(dirname(__FILE__) . DIRECTORY_SEPARATOR . 'base.php');
+defined('MODEL_DIR_NAME') or define('MODEL_DIR_NAME', 'models');
 
 
-function invoke_view($view_obj, $req) {
-    //当$view不存在$action动作时，执行默认的index动作，并将$action作为动作的第一个参数
-    if (! method_exists($view_obj, $req->action . 'Action')) {
-        array_unshift($req->args, $req->action);
-        $req->action = 'index';
-    }
-    //找出当前action对应哪些Filters
-    $filter_objects = array();
-    $filters = null;
-    if (method_exists($view_obj, 'filters')) {
-        $filters = $view_obj->filters($req->action);
-    }
-    $filters = empty($filters) ? array() : $filters;
-    //按顺序执行Filters的before检查，未通过跳转到404错误页面
-    foreach($filters as $filter) {
-        $construct = new AuConstructor(ucfirst($filter) . 'Filter', array(& $view_obj));
-        $filter_obj = $construct->emit();
-        if (method_exists($filter_obj, 'before') && ! $filter_obj->before(& $req)) {
-            return $req->error(404);
-        }
-        array_push($filter_objects, $filter_obj);
-    }
-    //执行action动作，再按逆序执行Filters的after包装，修改返回的结果$result
-    $result = call_user_func(array($view_obj, $req->action . 'Action'), & $req);
-    while ($filter_obj = array_pop($filter_objects)) {
-        if (method_exists($filter_obj, 'after')) {
-            $filter_obj->after(& $result);
-        }
-    }
-    return $result;
-}
-
-
-class AuConfigure
+class AuApplication extends AuBaseApplication
 {
-    protected $_data_ = array();        #数据
-    protected $_defaults_ = array();    #默认数据
+    protected static $_plugins_ = array();
+    protected $_cache_ = null;
+    public $routers = array();
 
-    protected function __construct(array $data=null)
+    public function __construct(array $configs=null)
     {
-        if (! empty($data)) {
-            $this->_data_ = $data;
+        $this->_cache_ = new AuCache();
+        if ( empty($configs) ) { //加载配置文件
+            $config_cache = new AuCacheFile(APPLICATION_ROOT, array(CONFIG_NAME), true, 0755);
+            $configs = $config_cache->get(CONFIG_NAME, '', array());
         }
+        parent::__construct($configs);
     }
 
-    public static function instance(array $data=null)
+    public static function autoload($klass)
     {
-        $obj = new AuConfigure($data);
+        if ( ! parent::autoload($klass) ) { //自动加载models下的类
+            $filenames = glob(APPLICATION_ROOT . DS . MODEL_DIR_NAME . DS . '*.php');
+            foreach ($filenames as $filename) {
+                require_once($filename);
+                if (class_exists($klass, false)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public function get_scopes()
+    {
+        return isset($this->_configs_->scopes) ? $this->_configs_->scopes : array();
+    }
+
+    public function cache()
+    {
+        if (func_num_args() == 0) {
+            return new AuCache();
+        }
+        import('lib/cache.php');
+        $keys = func_get_args();
+        foreach ($keys as $key) {
+            if ( empty($key) ) {
+                $obj = new AuCache();
+            }
+            else {
+                $items = $this->_configs_->cache[$key];
+                $obj = $this->load($items['class'], $key, $items);
+            }
+
+            if ( isset($chain) ) {
+                $chain->backend = $obj;
+            }
+            else {
+                $chain = $obj;
+            }
+        }
+        return $chain;
+    }
+
+    /*加载插件*/
+    public function load($class, $key='default', $items=array(), $args=array())
+    {
+        if ( isset($items['import']) ) {
+            import( $items['import'] );
+        }
+        if ( isset($items[$key]) ) {
+            $item_args = $items[$key];
+        }
+        else if ( isset($items['args']) ) {
+            $item_args = $items['args'];
+        }
+        else {
+            $item_args = array();
+        }
+        if ( isset($items['staticmethod']) ) {
+            $constructor = new AuProcedure($class, $items['staticmethod'], $item_args);
+        }
+        else {
+            $constructor = new AuConstructor($class, $item_args);
+        }
+        $obj = $constructor->emit_array($args);
+        if ( method_exists($obj, 'set_config_name') ) {
+            $obj->set_config_name($key);
+        }
         return $obj;
     }
 
-    public function __isset($prop)
+    /*缓存使用过的URL*/
+    public function has_seen($req)
     {
-        return array_key_exists($prop, $this->_data_);
+        return false;
+        //先检查$this->app->routers中缓存的正则URL对应的结果
+        foreach ($this->routers as $pattern => $router) {
+            if ( preg_match($pattern, $req->url, $matches) ) {
+                foreach ($router as $prop => $value) {
+                    $req->$prop = $value;
+                }
+                array_shift($matches);
+                $req->args = array_merge($matches, $req->args);
+                return true;
+             }
+        }
     }
 
-    public function __get($prop)
+    public function __call($name, $args)
     {
-        if (array_key_exists($prop, $this->_data_)) {
-            $items = $this->_data_[$prop];
+        $key = empty($args) ? 'default' : array_shift($args);
+        $obj = $this->_cache_->get('plugin', $name);
+        if ( is_null($obj) ) {
+            $items = $this->_configs_->$name;
+            if ( ! empty($items) ) {
+                $class = isset($items['class']) ? $items['class'] : ucfirst($name);
+                $obj = $this->load($class, $key, $items, $args);
+                $this->_cache_->put('plugin', $name, $obj);
+            }
         }
-        else {
-            $items = array_key_exists($prop, $this->_defaults_) ?
-                                $this->_defaults_[$prop] : array();
-        }
-        return $items;
+        return $obj;
     }
 }
 
@@ -155,136 +209,396 @@ class AuConstructor extends AuProcedure
 }
 
 
-class AuApplication
+/**
+ * 缓存类
+ **/
+abstract class AuCacheBase
 {
-    private $_cache_ = null;
-    private $_configs_ = null;
-    public $max_router_layer = 2; //view文件与目录最多两层
-    public $routers = array();
-    private static $_plugins_ = array();
+    const KEY_SEPERATOR = '.';
+    public $backend = null;
+    public $namespaces = '*'; //允许的名称空间
 
-    public function __construct($config_name)
+    public function __construct(array $namespaces=null)
     {
-        define('AUTUMN_ODU4MTE3NTYX', 1);
-        $this->_cache_ = new AuCache();
-        //加载配置文件
-        $config_cache = new AuCacheFile(APPLICATION_ROOT, array($config_name), true, 0755);
-        $configs = $config_cache->get($config_name, '', array());
-        $this->_configs_ = AuConfigure::instance( IN_CAKEPHP ? get_cakephp_dbs($configs) : $configs );
-        //加载配置文件，将basic段的配置加载为实例的属性
-        $basic_configs = empty($this->_configs_->basic) ? array() : $this->_configs_->basic;
-        foreach ($basic_configs as $key=>$value) {
-            if ($key != '_configs_') { //防止覆盖了配置文件本身
-                $this->$key = $value;
+        if ( ! empty($namespaces) ) {
+            if ( is_array($this->namespaces) ) { //扩充
+                $this->namespaces = array_merge($this->namespaces, $namespaces);
+            }
+            else { //限制
+                $this->namespaces = $namespaces;
             }
         }
     }
 
-    public function get_scopes()
+    abstract protected function _get($ns, $key, $default);
+    abstract protected function _put($ns, $key, $value, $ttl);
+    abstract protected function _delete($ns, $key);
+    abstract protected function _clean($ns=null);
+
+    public function key($ns, $key='')
     {
-        return isset($this->_configs_->scopes) ? $this->_configs_->scopes : array();
+        $ns = empty($ns) ? 'global' : $ns;
+        return $key === '' ? $ns : $ns . self::KEY_SEPERATOR . $key;
     }
 
-    public function log($var='', $level=null)
+    public function check($ns)
     {
-        $logger = $this->logging(); #先将KLogger类载入
-        if ( is_null($level) ) {
-            $level = KLogger::INFO;
+        if ('*' === $this->namespaces) {
+            return true;
         }
-        //$var = is_object($var) ? get_object_vars($var) : $var;
-        $var = is_string($var) ? $var : strval($var);
-        $logger->log($var, $level);
-    }
-
-    public function debug($var='', $level=null)
-    {
-        $debuger = $this->debuger(); #先将ChromePhp类载入
-        if ( is_null($level) ) {
-            $level = ChromePhp::LOG;
-        }
-        $var = is_scalar($var) ? strval($var) : var_export($var, true);
-        call_user_func(array($debuger, 'log'), $var);
-    }
-
-    public function cache()
-    {
-        if (func_num_args() == 0) {
-            return new AuCache();
-        }
-        import('lib/cache.php');
-        $keys = func_get_args();
-        foreach ($keys as $key) {
-            if ( empty($key) ) {
-                $obj = new AuCache();
-            }
-            else {
-                $items = $this->_configs_->cache[$key];
-                $obj = $this->load($items['class'], $key, $items);
-            }
-
-            if ( isset($chain) ) {
-                $chain->backend = $obj;
-            }
-            else {
-                $chain = $obj;
-            }
-        }
-        return $chain;
-    }
-
-    /*加载插件*/
-    public function load($class, $key='default', $items=array(), $args=array())
-    {
-        if ( isset($items['import']) ) {
-            import( $items['import'] );
-        }
-        if ( isset($items[$key]) ) {
-            $item_args = $items[$key];
-        }
-        else if ( isset($items['args']) ) {
-            $item_args = $items['args'];
+        else if ( in_array($ns, $this->namespaces, true) ) {
+            return true;
         }
         else {
-            $item_args = array();
-        }
-        if ( isset($items['staticmethod']) ) {
-            $constructor = new AuProcedure($class, $items['staticmethod'], $item_args);
-        }
-        else {
-            $constructor = new AuConstructor($class, $item_args);
-        }
-        $obj = $constructor->emit_array($args);
-        if ( method_exists($obj, 'set_config_name') ) {
-            $obj->set_config_name($key);
-        }
-        return $obj;
-    }
-
-    public function __call($name, $args)
-    {
-        $key = empty($args) ? 'default' : array_shift($args);
-        $obj = $this->_cache_->get('plugin', $name);
-        if ( is_null($obj) ) {
-            $items = $this->_configs_->$name;
-            if ( ! empty($items) ) {
-                $class = isset($items['class']) ? $items['class'] : ucfirst($name);
-                $obj = $this->load($class, $key, $items, $args);
-                $this->_cache_->put('plugin', $name, $obj);
+            if ( strpos($ns, self::KEY_SEPERATOR) !== false ) {
+                $pre = array_shift( explode(self::KEY_SEPERATOR, $ns) );
+                if ( in_array($pre, $this->namespaces, true) ) {
+                    return true;
+                }
             }
         }
-        return $obj;
+        return false;
     }
 
-    public function run() {
-        $req = new AuRequest($this);
-        require_once APPLICATION_ROOT . DS . 'views' . $req->file;
-        //调用对象方法
-        $view = camelize(ltrim(substr($req->file, 0, -4), '/'));
-        if (class_exists($view . 'View')) {
-            $req->view = $view;
-            $construct = new AuConstructor($req->view . 'View');
-            $view_obj =  $construct->emit();
-            invoke_view($view_obj, $req);
+    public function get($ns, $key, $default=null)
+    {
+        $value = $this->_get($ns, $key);
+        if ( is_null($value) && ! is_null($this->backend) ) {
+            $value = $this->backend->get($ns, $key);
         }
+        $value = is_null($value) ? $default : $value;
+        return $value;
+    }
+
+    public function put($ns, $key, $value, $ttl=0)
+    {
+        if ( ! is_null($this->backend) ) {
+            $this->backend->put($ns, $key, $value, $ttl);
+        }
+        $this->_put($ns, $key, $value, $ttl);
+    }
+
+    public function retrieve($ns, $key, $proc, $ttl=0)
+    {
+        $value = $this->get($ns, $key);
+        if ( is_null($value) ) { //不存在，尝试创建
+            $value = $proc instanceof AuProcedure ? $proc->emit() : $proc;
+            if ( ! is_null($value) ) { //成功创建
+                $this->put($ns, $key, $value, $ttl);
+            }
+        }
+        return $value;
+    }
+
+    public function delete($ns, $key)
+    {
+        if ( ! is_null($this->backend) ) {
+            $this->backend->delete($ns, $key);
+        }
+        $this->_delete($ns, $key);
+    }
+
+    public function clean($ns=null)
+    {
+        if ( ! is_null($this->backend) ) {
+            $this->backend->clean($ns);
+        }
+        $this->_clean($ns);
+    }
+}
+
+
+class AuCache extends AuCacheBase
+{
+    protected static $_storage_ = array(); //对象注册表
+
+    protected function _get($ns, $key, $default=null)
+    {
+        if ( array_key_exists($ns, self::$_storage_) ) {
+            if ( array_key_exists($key, self::$_storage_[$ns]) ) {
+                $cell = self::$_storage_[$ns][$key];
+                if ( ! isset($cell['expire']) || $cell['expire'] > time() ) {
+                    return $cell['value'];
+                }
+            }
+            self::$_storage_[$ns] = array();
+        }
+        return $default;
+    }
+
+    protected function _put($ns, $key, $value, $ttl=0)
+    {
+        if ( ! array_key_exists($ns, self::$_storage_) ) {
+            self::$_storage_[$ns] = array();
+        }
+        self::$_storage_[$ns][$key] = array(
+            'value' => $value, 'expire' => is_null($ttl) ? null : time() + $ttl
+        );
+    }
+
+    protected function _delete($ns, $key)
+    {
+        if ( array_key_exists($ns, self::$_storage_) ) {
+            if ( array_key_exists($key, self::$_storage_[$ns]) ) {
+                unset( self::$_storage_[$ns][$key] );
+            }
+        }
+    }
+
+    protected function _clean($ns=null)
+    {
+        if ( is_null($ns) ) {
+            self::$_storage_ = array();
+        }
+        else {
+            self::$_storage_[$ns] = array();
+        }
+    }
+}
+
+
+class AuCacheFile extends AuCacheBase
+{
+    public $cache_dir = '';
+    public $forever = false; //$forever === true时不将expire时间写入文件
+    public $file_mode = 0777;
+
+    public function __construct($cache_dir, array $namespaces=null,
+                                $forever=false, $file_mode=0777)
+    {
+        $this->cache_dir = $cache_dir;
+        $this->forever = $forever;
+        $this->file_mode = $file_mode;
+        parent::__construct($namespaces);
+    }
+
+    protected function _read($filename)
+    {
+        return (include $filename);
+    }
+
+    protected function _write($filename, $cell)
+    {
+        @touch($filename);
+        @chmod($filename, $this->file_mode);
+        $content = "<?php \nreturn " . var_export($cell, true) . ";\n";
+        file_put_contents($filename, $content, LOCK_EX);
+    }
+
+    protected function _get($ns, $key, $default=null)
+    {
+        $value = $default;
+        $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
+        if ( file_exists($filename) ) {
+            $cell = $this->_read($filename);
+            if ($this->forever === true) {
+                $value = $cell;
+            }
+            else if ( empty($cell['expire']) || $cell['expire'] > time() ) {
+                $value = $cell['value'];
+            }
+        }
+        return $value;
+    }
+
+    protected function _put($ns, $key, $value, $ttl=0)
+    {
+        if ( $this->check($ns) ) {
+            $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
+            if ($this->forever === true) {
+                $cell = $value;
+            }
+            else {
+                $cell = array(
+                    'expire' => $ttl === 0 ? 0 : time() + $ttl, 'value' => $value
+                );
+            }
+            $this->_write($filename, $cell);
+        }
+    }
+
+    protected function _delete($ns, $key)
+    {
+        $filename = $this->cache_dir . DS . $this->key($ns, $key) . '.php';
+        if ( file_exists($filename) ) {
+            unlink($filename);
+        }
+    }
+
+    protected function _clean($ns=null)
+    {
+        $ns = is_null($ns) ? '*' : $ns;
+        $files = glob($this->cache_dir . DS . $this->key($ns, '*') . '.php');
+        foreach ($files as $filename) {
+            unlink($filename);
+        }
+    }
+}
+
+
+class AuLiteral
+{
+    public $text = '';
+
+    public function __construct($text)
+    {
+        $this->text = $text;
+    }
+
+    public function __toString()
+    {
+        return $this->text;
+    }
+}
+
+
+/**
+ * 使用PDO的数据库连接
+ */
+class AuDatabase
+{
+    public $dbname = 'default';
+    private $conn = null;
+    private $dsn = '';
+    private $user = '';
+    private $password = '';
+    public $prefix = '';
+    public static $sql_history = array();
+
+    public function __construct($dsn, $user='', $password='', $prefix='')
+    {
+        $this->dsn = $dsn;
+        $this->user = $user;
+        $this->password = $password;
+        $this->prefix = $prefix;
+    }
+
+    public function set_config_name($key) {
+        $this->dbname = $key;
+    }
+
+    /*连接数据库*/
+    public function connect()
+    {
+        if ( is_null($this->conn) ) {
+            $opts = array(
+                PDO::ATTR_PERSISTENT => false,
+                //PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, //错误模式，默认PDO::ERRMODE_SILENT
+                PDO::ATTR_ORACLE_NULLS => PDO::NULL_TO_STRING, //将空值转为空字符串
+            );
+            try {
+                $conn = new PDO($this->dsn, $this->user, $this->password, $opts);
+            }
+            catch (PDOException $e) {
+                trigger_error("DB connect failed:" . $e->getMessage(), E_USER_ERROR);
+            }
+
+            if ( strtolower(substr($this->dsn, 0, 6)) == 'mysql:' ) {
+                try {
+                    $conn->setAttribute(PDO::MYSQL_ATTR_USE_BUFFERED_QUERY, true); //使用MySQL查询缓冲
+                    $conn->exec("SET NAMES 'UTF8'; SET TIME_ZONE = '+8:00'");
+                }
+                catch (PDOException $e) {
+                }
+            }
+            $this->conn = $conn;
+        }
+        return $this->conn;
+    }
+
+    public function quote($args)
+    {
+        if ( is_array($args) ) {
+            return array_map(array($this, 'quote'), $args);
+        }
+        else if ( $args instanceof AuLiteral ) {
+            return $args->text;
+        }
+        else {
+            $conn = $this->connect();
+            return $conn->quote($args, PDO::PARAM_STR);
+        }
+    }
+
+    /*执行修改操作*/
+    public function execute($sql, $args=array(), $insert_id=false)
+    {
+        $result = true;
+        $conn = $this->connect();
+        $sql = $this->dump($sql, $args);
+        self::$sql_history []= array($sql, array());
+        try {
+            $conn->beginTransaction();
+            $conn->exec($sql);
+            if ($insert_id) { //Should use lastInsertId BEFORE you commit
+                $result = $conn->lastInsertId();
+            }
+            $conn->commit();
+        } catch(PDOException $e) {
+            $conn->rollBack();
+            trigger_error("DB execute failed:" . $e->getMessage(), E_USER_ERROR);
+        }
+        return $result;
+    }
+
+    /*执行查询操作*/
+    public function query($sql, $args=array(), $fetch='all')
+    {
+        $conn = $this->connect();
+        self::$sql_history []= array($sql, $args);
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($args);
+        try {
+            if ( empty($fetch) || $fetch == 'all' ) {
+                $result = $stmt->fetchAll( PDO::FETCH_ASSOC );
+            }
+            else if ( $fetch == 'one' ) {
+                $result = $stmt->fetch( PDO::FETCH_ASSOC );
+            }
+            else if ( $fetch == 'column' ) {
+                $result = $stmt->fetchColumn();
+            }
+            else {
+                $result = $fetch->emit_prepend($stmt);
+            }
+        } catch(PDOException $e) {
+            trigger_error("DB query failed:" . $e->getMessage(), E_USER_ERROR);
+        }
+        $stmt->closeCursor();
+        return $result;
+    }
+
+    /*生成可打印的SQL语句*/
+    public function dump($sql, $args=array())
+    {
+        if (strpos($sql, "%")) {
+            $sql = str_replace("%%", "%", $sql);
+            $sql = str_replace("%", "%%", $sql);
+        }
+        $sql = str_replace("?", "%s", $sql);
+        return vsprintf($sql, $this->quote($args));
+    }
+
+    public function dump_all($return=false)
+    {
+        @ob_start();
+        foreach (self::$sql_history as $i => $line) {
+            list($sql, $args) = $line;
+            echo ($i + 1) . ": ";
+            echo empty($args) ? $sql : $this->dump($sql, $args);
+            echo "; <br />\n";
+        }
+        return $return ? ob_get_clean() : ob_end_flush();
+    }
+
+    public function factory($tblname, $schema=null, $rowclass='Object', $setclass='Array')
+    {
+        if ( is_null($schema) ) {
+            $schema = AuSchema::instance($tblname, $this->dbname);
+        }
+        $obj = new AuQuery($this, $schema->table, $schema->get_pkey());
+        $obj->factory = AuFactory::instance($schema, $rowclass, $setclass);
+        return $obj;
     }
 }

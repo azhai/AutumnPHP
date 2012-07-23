@@ -2,6 +2,185 @@
 defined('APPLICATION_ROOT') or die();
 
 
+/**
+ * 结果对象，自动查询关联对象
+ **/
+class AuLazyRow extends ArrayObject
+{
+    private $_state_ = '';
+    protected $_factory_ = null;
+    protected $_behaviors_ = array();
+    protected $_virtuals_ = array();
+
+    public function __construct(array $data=array())
+    {
+        parent::__construct($data, parent::ARRAY_AS_PROPS);
+    }
+
+    public function get_state()
+    {
+        return $this->offsetGet('_state_');
+    }
+
+    public function set_state($state='')
+    {
+        parent::offsetSet('_state_', $state);
+    }
+
+    public function get_schema()
+    {
+        return $this->factory()->schema;
+    }
+
+    public function set_factory($factory)
+    {
+        parent::offsetSet('_factory_', $factory);
+    }
+
+    public function factory($rowclass='', $setclass='')
+    {
+        if ( ! empty($rowclass) ) {
+            $this->offsetGet('_factory_')->rowclass = $rowclass;
+        }
+        if ( ! empty($setclass) ) {
+            $this->offsetGet('_factory_')->setclass = $setclass;
+        }
+        return $this->offsetGet('_factory_');
+    }
+
+    public function offsetGet($prop)
+    {
+        if ( $this->offsetExists($prop) ) {
+            return parent::offsetGet($prop);
+        }
+        else if ( method_exists($this, 'get_' . $prop) ) {
+            return $this->{'get_' . $prop}();
+        }
+        else if ( array_key_exists($prop, $this->_behaviors_) ) {
+            return $this->exec_behavior($prop);
+        }
+    }
+
+    public function offsetSet($prop, $value)
+    {
+        if ( method_exists($this, 'set_' . $prop) ) {
+            return $this->{'set_' . $prop}($value);
+        }
+        else if ( $this->offsetExists($prop)
+            || array_key_exists($prop, $this->_behaviors_)
+            || array_key_exists($prop, $this->_virtuals_) ) {
+            return parent::offsetSet($prop, $value);
+        }
+    }
+
+    public function get_id()
+    {
+        $pkey_arr = $this->factory()->schema->pkey_array;
+        return slice_within($this->getArrayCopy(), $pkey_arr);
+    }
+
+    public function get_changes()
+    {
+        $pkey_arr = $this->factory()->schema->pkey_array;
+        return slice_without($this->getArrayCopy(), $pkey_arr);
+    }
+
+    public function update($data)
+    {
+        $pkey_arr = $this->factory()->schema->pkey_array;
+        foreach ($data as $key => $val) {
+            if ( ! in_array($key, $pkey_arr, true) ) {
+                $this->offsetSet($key, $val);
+            }
+        }
+    }
+
+    public function add_behavior($name, $behavior)
+    {
+        $this->_behaviors_[$name] = $behavior;
+    }
+
+    public function get_behavior($name)
+    {
+        return isset($this->_behaviors_[$name]) ? $this->_behaviors_[$name] : array();
+    }
+
+    public function exec_behavior($prop)
+    {
+        @list($behavior, $model, $foreign, $extra) = $this->_behaviors_[$prop];
+        $constructor = new AuConstructor($behavior, array(
+            $model, $foreign, $extra
+        ));
+        $result = $constructor->emit()->emit($this);
+        parent::offsetSet($prop, $result);
+        return $result;
+    }
+}
+
+
+/**
+ * 数据集，自动将row封装成obj
+ * NOTICE: 在json_encode输出前，要用(array)将它强制转化为索引数组
+ */
+class AuLazySet extends ArrayIterator
+{
+    protected $_factory_ = 'AuLazyRow';
+
+    public function __construct(array $data=array(), $factory=null)
+    {
+        parent::__construct($data);
+        if ( ! is_null($factory) ) {
+            $this->_factory_ = $factory;
+        }
+    }
+
+    public function get_rowclass()
+    {
+        return $this->_factory_->rowclass;
+    }
+
+    public function set_rowclass($rowclass)
+    {
+        $this->_factory_->rowclass = $rowclass;
+    }
+
+    public function get_schema()
+    {
+        return $this->_factory_->schema;
+    }
+
+    public function wrap_row($row=null)
+    {
+        if ($row) {
+            return $this->_factory_->wrap($row);
+        }
+        return $row;
+    }
+
+    public function current()
+    {
+        $row = parent::current();
+        return $this->wrap_row($row);
+    }
+
+    public function offsetGet($index)
+    {
+        $row = $this->offsetExists($index) ? parent::offsetGet($index) : null;
+        $obj = $this->wrap_row($row);
+        return $obj;
+    }
+
+    public function options($val='id', $text='name', $blank=false)
+    {
+        $opts = $blank ? array('' => '（空）') : array();
+        foreach ($this as $obj) {
+            $opts[ $obj->$val ] = $obj->$text;
+        }
+        return $opts;
+    }
+}
+
+
 class AuBehavior extends AuProcedure
 {
     public $procs = array();
